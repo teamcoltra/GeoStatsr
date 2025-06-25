@@ -103,7 +103,7 @@ func (s *geoStatsrService) run() {
 	initDB()
 	initTemplates()
 	countryCoder = NewCountryCoder() // Initialize global country coder
-	
+
 	// Setup HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/update_ncfa", apiUpdateCookie)
@@ -2397,7 +2397,7 @@ func main() {
 		} else {
 			log.Println("Running in standalone mode")
 		}
-		
+
 		// Setup debug logging for standalone mode
 		if config.Debug && config.LogDir != "" {
 			if err := os.MkdirAll(config.LogDir, 0755); err != nil {

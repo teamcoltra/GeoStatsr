@@ -351,7 +351,7 @@ I have another repo here https://github.com/teamcoltra/geoguessr-api-docs this i
 
 ## License
 
-[Add your license here]
+This project is released under the [Yo License](LICENSE). You are permitted to copy, modify, use, compile, and otherwise use this code however you want. If you meet me in person and you liked this software please at least say "Yo."
 
 ## Support
 
