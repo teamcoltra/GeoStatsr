@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset='utf-8'>
+    <title>GeoStats - Stats Row</title>
+    <link href="/static/css/bootstrap.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .stat-card {
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            line-height: 1;
+        }
+        .stat-label {
+            font-size: 1rem;
+            margin-top: 0.5rem;
+        }
+        .container-fluid {
+            max-width: none;
+        }
+        @media (max-width: 768px) {
+            .stat-number {
+                font-size: 1.8rem;
+            }
+            .stat-label {
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body class='bg-body text-body'>
+    <div class="container-fluid">
+        <!-- Stats Summary -->
+        <div class="row" id="statsRow">
+            <div class="col-md-2" id="total_games_card" style="display: block;">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="totalGames">-</div>
+                    <div class="stat-label text-body-secondary">Total Games</div>
+                </div>
+            </div>
+            <div class="col-md-2" id="total_rounds_card" style="display: block;">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="totalRounds">-</div>
+                    <div class="stat-label text-body-secondary">Total Rounds</div>
+                </div>
+            </div>
+            <div class="col-md-2" id="avg_score_card" style="display: block;">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="avgScore">-</div>
+                    <div class="stat-label text-body-secondary">Avg Score</div>
+                </div>
+            </div>
+            <div class="col-md-2" id="avg_distance_card" style="display: block;">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="avgDistance">-</div>
+                    <div class="stat-label text-body-secondary">Avg Distance (km)</div>
+                </div>
+            </div>
+            <div class="col-md-2" id="fav_country_card" style="display: block;">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="favCountry">-</div>
+                    <div class="stat-label text-body-secondary">Most Frequent</div>
+                </div>
+            </div>
+            <div class="col-md-2" id="best_country_card" style="display: block;">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="bestCountry">-</div>
+                    <div class="stat-label text-body-secondary">Best Country</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const timeline = urlParams.get('timeline'); // Days to look back
+        const gameType = urlParams.get('type') || 'standard'; // Game type
+        const movement = urlParams.get('move') || ''; // Movement mode
+        const cards = urlParams.get('cards'); // Specific cards to show
+        
+        // Hide cards that aren't requested
+        if (cards) {
+            const requestedCards = cards.split(',').map(card => card.trim());
+            const allCards = ['total_games', 'total_rounds', 'avg_score', 'avg_distance', 'fav_country', 'best_country'];
+            
+            allCards.forEach(cardName => {
+                const cardElement = document.getElementById(cardName + '_card');
+                if (cardElement) {
+                    if (requestedCards.includes(cardName)) {
+                        cardElement.style.display = 'block';
+                    } else {
+                        cardElement.style.display = 'none';
+                    }
+                }
+            });
+            
+            // Adjust column width based on number of visible cards
+            const visibleCards = requestedCards.length;
+            const colClass = visibleCards <= 6 ? `col-md-${Math.floor(12 / visibleCards)}` : 'col-md-2';
+            requestedCards.forEach(cardName => {
+                const cardElement = document.getElementById(cardName + '_card');
+                if (cardElement) {
+                    cardElement.className = colClass;
+                    cardElement.style.display = 'block';
+                }
+            });
+        }
+
+        // Load summary statistics with timeline filter
+        async function loadSummaryStats() {
+            try {
+                let url = '/api/summary?type=' + gameType;
+                if (movement) {
+                    url += '&move=' + movement;
+                }
+                if (timeline) {
+                    url += '&timeline=' + timeline;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                document.getElementById('totalGames').textContent = data.TotalGames;
+                document.getElementById('totalRounds').textContent = data.TotalRounds;
+                document.getElementById('avgScore').textContent = Math.round(data.AvgScore);
+                document.getElementById('avgDistance').textContent = Math.round(data.AvgDistKm);
+                document.getElementById('favCountry').textContent = data.FavouriteCountry || '-';
+                document.getElementById('bestCountry').textContent = data.BestCountry || '-';
+            } catch (error) {
+                console.error('Failed to load summary stats:', error);
+            }
+        }
+
+        // Auto-refresh every 30 seconds
+        function startAutoRefresh() {
+            setInterval(loadSummaryStats, 30000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSummaryStats();
+            startAutoRefresh();
+        });
+    </script>
+</body>
+</html>

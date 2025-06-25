@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset='utf-8'>
+    <title>{{.CountryName}} - GeoStatsr</title>
+    <link href="/static/css/bootstrap.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        .navbar {
+            border: none;
+        }
+        .stat-card {
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+        }
+        .movement-filter {
+            margin-bottom: 1.5rem;
+        }
+        .movement-filter .btn {
+            margin-right: 0.5rem;
+        }
+        .timeline-container {
+            margin-bottom: 1.5rem;
+        }
+        .country-map {
+            height: 400px;
+            width: 100%;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .table-container {
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .rounds-table {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .sticky-top {
+            background-color: var(--bs-body-secondary-bg);
+            z-index: 10;
+        }
+        [data-bs-theme="dark"] .sticky-top {
+            background-color: var(--bs-dark);
+        }
+        .round-row {
+            cursor: pointer;
+            transition: background-color 0.1s ease;
+        }
+        .round-row:hover {
+            background-color: var(--bs-primary) !important;
+            color: white !important;
+        }
+        .game-link {
+            text-decoration: none;
+            color: inherit;
+        }
+        .game-link:hover {
+            color: var(--bs-primary);
+        }
+        .confused-table {
+            height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class='bg-body text-body'>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg bg-primary mb-4" id="mainNavbar" data-bs-theme="light">
+        <div class="container-fluid">
+            <a href="/" class="navbar-brand mb-0 h1">
+                <img src="/static/img/text-logo.svg" alt="Logo" height="40" class="d-inline-block align-text-top">
+            </a>
+            <div class="d-flex align-items-center">
+                <button id="themeToggle" class="btn btn-warning me-2" title="Toggle Dark/Light Mode">
+                    <span id="themeIcon">🌙</span>
+                </button>
+                <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Page Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1>{{.CountryName}} Performance</h1>
+                <p class="text-body-secondary">Detailed statistics for rounds played in {{.CountryName}}</p>
+            </div>
+        </div>
+
+        <!-- Game Type Tabs -->
+        <ul class="nav nav-tabs mb-4" id="gameTypeTabs">
+            <li class="nav-item">
+                <a class="nav-link active" data-target="standard" href="#">🎯 Singleplayer</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-target="duels" href="#">⚔️ Duels</a>
+            </li>
+        </ul>
+
+        <!-- Movement Mode Filter -->
+        <div class="movement-filter">
+            <label class="form-label">Movement Mode:</label>
+            <div class="btn-group" role="group">
+                <input type="radio" class="btn-check" name="movement" id="allModes" value="" checked>
+                <label class="btn btn-primary" for="allModes">All</label>
+                
+                <input type="radio" class="btn-check" name="movement" id="moving" value="Moving">
+                <label class="btn btn-success" for="moving">Moving</label>
+                
+                <input type="radio" class="btn-check" name="movement" id="noMove" value="NoMove">
+                <label class="btn btn-success" for="noMove">No Moving</label>
+                
+                <input type="radio" class="btn-check" name="movement" id="nmpz" value="NMPZ">
+                <label class="btn btn-success" for="nmpz">NMPZ</label>
+            </div>
+        </div>
+
+        <!-- Timeline Filter -->
+        <div class="timeline-container">
+            <label class="form-label">Timeline:</label>
+            <div class="btn-group" role="group">
+                <input type="radio" class="btn-check" name="timeline" id="allTime" value="" checked>
+                <label class="btn btn-outline-primary" for="allTime">All Time</label>
+                
+                <input type="radio" class="btn-check" name="timeline" id="last7" value="7">
+                <label class="btn btn-outline-primary" for="last7">Last 7 Days</label>
+                
+                <input type="radio" class="btn-check" name="timeline" id="last30" value="30">
+                <label class="btn btn-outline-primary" for="last30">Last 30 Days</label>
+                
+                <input type="radio" class="btn-check" name="timeline" id="last90" value="90">
+                <label class="btn btn-outline-primary" for="last90">Last 90 Days</label>
+            </div>
+        </div>
+
+        <!-- Stats Summary -->
+        <div class="row mb-4" id="statsRow">
+            <div class="col-md-2">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="totalGames">-</div>
+                    <div class="stat-label text-body-secondary">Total Games</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="totalRounds">-</div>
+                    <div class="stat-label text-body-secondary">Total Rounds</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="avgScore">-</div>
+                    <div class="stat-label text-body-secondary">Avg Score</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="avgDistance">-</div>
+                    <div class="stat-label text-body-secondary">Avg Distance (km)</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card text-center bg-body-secondary">
+                    <div class="stat-number text-body" id="mostConfusedWith">-</div>
+                    <div class="stat-label text-body-secondary">Most Confused With</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Country Map -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="bg-body-secondary" style="border-radius: 8px; padding: 1rem;">
+                    <h5 class="text-body mb-3">Round Locations in {{.CountryName}}</h5>
+                    <div id="countryMap" class="country-map"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Most Confused With Table -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="table-container bg-body-secondary">
+                    <h5 class="text-body">🤔 Most Confused With</h5>
+                    <div class="confused-table">
+                        <table class="table table-sm table-hover" id="confusedTable">
+                            <thead class="sticky-top">
+                                <tr>
+                                    <th>You Guessed</th>
+                                    <th>Times</th>
+                                    <th>Avg Distance</th>
+                                </tr>
+                            </thead>
+                            <tbody id="confusedTableBody">
+                                <tr><td colspan="3" class="text-center">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rounds Table -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="table-container bg-body-secondary">
+                    <h5 class="text-body">🎯 All Rounds in {{.CountryName}} (<span id="roundsCount">0</span>)</h5>
+                    <div class="rounds-table">
+                        <table class="table table-sm table-striped" id="roundsTable">
+                            <thead class="sticky-top">
+                                <tr>
+                                    <th>Game</th>
+                                    <th>Round</th>
+                                    <th>Score</th>
+                                    <th>Distance (km)</th>
+                                    <th>Date</th>
+                                    <th>Mode</th>
+                                    <th id="opponentHeader" style="display: none;">Opponent Score</th>
+                                    <th id="timeHeader">Time</th>
+                                    <th id="stepsHeader">Steps</th>
+                                </tr>
+                            </thead>
+                            <tbody id="roundsTableBody">
+                                <tr><td colspan="9" class="text-center">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentGameType = 'standard';
+        let currentMovement = '';
+        let currentTimeline = '';
+        let countryCode = '{{.CountryCode}}';
+        let countryName = '{{.CountryName}}';
+        let countryMap = null;
+        let isDarkMode = true;
+
+        // Parse URL hash for initial state
+        function parseUrlHash() {
+            const hash = window.location.hash;
+            if (hash) {
+                const params = new URLSearchParams(hash.substring(1));
+                if (params.get('gameType')) {
+                    currentGameType = params.get('gameType');
+                }
+                if (params.get('movement')) {
+                    currentMovement = params.get('movement');
+                }
+                if (params.get('timeline')) {
+                    currentTimeline = params.get('timeline');
+                }
+            }
+        }
+
+        // Update URL hash when state changes
+        function updateUrlHash() {
+            const params = new URLSearchParams();
+            if (currentGameType !== 'standard') params.set('gameType', currentGameType);
+            if (currentMovement) params.set('movement', currentMovement);
+            if (currentTimeline) params.set('timeline', currentTimeline);
+            
+            const hash = params.toString();
+            window.location.hash = hash ? '#' + hash : '';
+        }
+
+        // Theme toggle functionality
+        function toggleTheme() {
+            const html = document.documentElement;
+            const themeButton = document.getElementById('themeToggle');
+            const themeIcon = document.getElementById('themeIcon');
+            
+            if (isDarkMode) {
+                // Switch to light mode
+                html.setAttribute('data-bs-theme', 'light');
+                themeButton.className = 'btn btn-dark me-2';
+                themeIcon.textContent = '🌙';
+                localStorage.setItem('theme', 'light');
+                isDarkMode = false;
+            } else {
+                // Switch to dark mode
+                html.setAttribute('data-bs-theme', 'dark');
+                themeButton.className = 'btn btn-warning me-2';
+                themeIcon.textContent = '☀️';
+                localStorage.setItem('theme', 'dark');
+                isDarkMode = true;
+            }
+        }
+
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'light') {
+                isDarkMode = true; // Set to true so toggle switches to light
+                toggleTheme();
+            }
+        }
+
+        // Tab switching
+        function switchGameType(gameType) {
+            currentGameType = gameType;
+            
+            // Update tab appearance
+            document.querySelectorAll('[data-target]').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.target === gameType);
+            });
+            
+            // Show/hide opponent column for duels
+            const opponentHeader = document.getElementById('opponentHeader');
+            const timeHeader = document.getElementById('timeHeader');
+            const stepsHeader = document.getElementById('stepsHeader');
+            
+            if (gameType === 'duels') {
+                opponentHeader.style.display = '';
+                timeHeader.style.display = 'none';
+                stepsHeader.style.display = 'none';
+            } else {
+                opponentHeader.style.display = 'none';
+                timeHeader.style.display = '';
+                stepsHeader.style.display = '';
+            }
+            
+            updateUrlHash();
+            loadAllData();
+        }
+
+        // Load summary statistics
+        async function loadSummaryStats() {
+            try {
+                let url = `/api/country/${countryCode}/summary?type=${currentGameType}`;
+                if (currentMovement) url += '&move=' + currentMovement;
+                if (currentTimeline) url += '&timeline=' + currentTimeline;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                document.getElementById('totalGames').textContent = data.totalGames || 0;
+                document.getElementById('totalRounds').textContent = data.totalRounds || 0;
+                document.getElementById('avgScore').textContent = data.avgScore ? Math.round(data.avgScore) : '-';
+                document.getElementById('avgDistance').textContent = data.avgDistance ? Math.round(data.avgDistance) : '-';
+                document.getElementById('mostConfusedWith').textContent = data.mostConfusedWith || '-';
+            } catch (error) {
+                console.error('Failed to load summary stats:', error);
+            }
+        }
+
+        // Load confused countries data
+        async function loadConfusedCountries() {
+            try {
+                let url = `/api/country/${countryCode}/confused?type=${currentGameType}`;
+                if (currentMovement) url += '&move=' + currentMovement;
+                if (currentTimeline) url += '&timeline=' + currentTimeline;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                const tableBody = document.getElementById('confusedTableBody');
+                tableBody.innerHTML = '';
+                
+                if (data && data.length > 0) {
+                    data.slice(0, 10).forEach(item => {
+                        const row = tableBody.insertRow();
+                        row.innerHTML = `
+                            <td>${item.guessedCountry}</td>
+                            <td>${item.count}</td>
+                            <td>${Math.round(item.avgDistance)}</td>
+                        `;
+                    });
+                } else {
+                    tableBody.innerHTML = '<tr><td colspan="3" class="text-center">No confusion data available</td></tr>';
+                }
+            } catch (error) {
+                console.error('Failed to load confused countries:', error);
+            }
+        }
+
+        // Load rounds data
+        async function loadRoundsData() {
+            try {
+                let url = `/api/country/${countryCode}/rounds?type=${currentGameType}`;
+                if (currentMovement) url += '&move=' + currentMovement;
+                if (currentTimeline) url += '&timeline=' + currentTimeline;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                const tableBody = document.getElementById('roundsTableBody');
+                const roundsCount = document.getElementById('roundsCount');
+                
+                tableBody.innerHTML = '';
+                roundsCount.textContent = data.length;
+                
+                if (data && data.length > 0) {
+                    data.forEach(round => {
+                        const row = tableBody.insertRow();
+                        row.className = 'round-row';
+                        
+                        const gameLink = `/#!gameType=${currentGameType}&gameId=${round.gameId}`;
+                        const truncatedGameId = round.gameId.substring(0, 8) + '...';
+                        const roundDate = new Date(round.gameDate || round.created).toLocaleDateString();
+                        
+                        let rowHtml = `
+                            <td><a href="${gameLink}" class="game-link">${truncatedGameId}</a></td>
+                            <td>${round.roundNumber}</td>
+                            <td>${Math.round(round.playerScore)}</td>
+                            <td>${Math.round(round.distance)}</td>
+                            <td>${roundDate}</td>
+                            <td>${round.movement}</td>
+                        `;
+                        
+                        if (currentGameType === 'duels') {
+                            rowHtml += `<td>${round.opponentScore ? Math.round(round.opponentScore) : '-'}</td>`;
+                        } else {
+                            rowHtml += `<td style="display: none;"></td>`;
+                            rowHtml += `<td>${round.time || '-'}</td>`;
+                            rowHtml += `<td>${round.steps || '-'}</td>`;
+                        }
+                        
+                        row.innerHTML = rowHtml;
+                    });
+                    
+                    // Load map with round locations
+                    loadCountryMap(data);
+                } else {
+                    tableBody.innerHTML = '<tr><td colspan="9" class="text-center">No rounds found</td></tr>';
+                    if (countryMap) {
+                        countryMap.remove();
+                        countryMap = null;
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load rounds data:', error);
+            }
+        }
+
+        // Load country map with round locations
+        function loadCountryMap(rounds) {
+            if (countryMap) {
+                countryMap.remove();
+            }
+            
+            countryMap = L.map('countryMap', {
+                center: [0, 0],
+                zoom: 2,
+                zoomControl: true,
+                scrollWheelZoom: true
+            });
+            
+            // Add tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(countryMap);
+            
+            if (rounds.length > 0) {
+                const markers = [];
+                const bounds = L.latLngBounds();
+                
+                rounds.forEach((round, index) => {
+                    if (round.actualLat && round.actualLng) {
+                        const marker = L.circleMarker([round.actualLat, round.actualLng], {
+                            radius: 8,
+                            fillColor: getScoreColor(round.playerScore),
+                            color: '#fff',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8
+                        });
+                        
+                        const popupContent = `
+                            <strong>Round ${round.roundNumber}</strong><br>
+                            Score: ${Math.round(round.playerScore)}<br>
+                            Distance: ${Math.round(round.distance)} km<br>
+                            Game: ${round.gameId.substring(0, 8)}...
+                        `;
+                        
+                        marker.bindPopup(popupContent);
+                        marker.addTo(countryMap);
+                        markers.push(marker);
+                        bounds.extend([round.actualLat, round.actualLng]);
+                    }
+                });
+                
+                if (bounds.isValid()) {
+                    countryMap.fitBounds(bounds, { padding: [20, 20] });
+                }
+            }
+        }
+
+        // Get color based on score
+        function getScoreColor(score) {
+            if (score >= 4000) return '#28a745'; // Green
+            if (score >= 2000) return '#ffc107'; // Yellow
+            return '#dc3545'; // Red
+        }
+
+        // Load all data
+        function loadAllData() {
+            loadSummaryStats();
+            loadConfusedCountries();
+            loadRoundsData();
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load theme
+            loadTheme();
+            
+            // Parse initial URL hash
+            parseUrlHash();
+            
+            // Set initial UI state
+            if (currentGameType !== 'standard') {
+                switchGameType(currentGameType);
+            }
+            if (currentMovement) {
+                document.querySelector(`input[name="movement"][value="${currentMovement}"]`).checked = true;
+            }
+            if (currentTimeline) {
+                document.querySelector(`input[name="timeline"][value="${currentTimeline}"]`).checked = true;
+            }
+            
+            // Theme toggle
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+            
+            // Tab switching
+            document.querySelectorAll('[data-target]').forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    switchGameType(e.target.dataset.target);
+                });
+            });
+            
+            // Movement filter
+            document.querySelectorAll('input[name="movement"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    currentMovement = e.target.value;
+                    updateUrlHash();
+                    loadAllData();
+                });
+            });
+            
+            // Timeline filter
+            document.querySelectorAll('input[name="timeline"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    currentTimeline = e.target.value;
+                    updateUrlHash();
+                    loadAllData();
+                });
+            });
+            
+            // Load initial data
+            loadAllData();
+        });
+    </script>
+</body>
+</html>
