@@ -51,6 +51,63 @@ cd geostatsr
 go build
 ```
 
+### Running as a Service
+
+GeoStatsr can be installed and run as a system service on Windows, macOS, and Linux. This allows it to run automatically in the background and start on boot.
+
+#### Service Commands
+
+The program supports the following service commands:
+
+```bash
+# Install the service (requires administrator/root privileges)
+./geostatsr -s install
+
+# Start the service
+./geostatsr -s start
+
+# Stop the service
+./geostatsr -s stop
+
+# Restart the service
+./geostatsr -s restart
+
+# Uninstall the service
+./geostatsr -s uninstall
+```
+
+#### Platform-Specific Notes
+
+**Windows:**
+- Service commands require administrator privileges (run PowerShell/Command Prompt as Administrator)
+- The service will be registered in Windows Services as "GeoStatsr"
+- Service logs can be viewed in Windows Event Viewer
+
+**Linux:**
+- Service commands require root privileges (`sudo`)
+- The service uses systemd on most modern distributions
+- Service status: `sudo systemctl status GeoStatsr`
+- Service logs: `sudo journalctl -u GeoStatsr`
+
+**macOS:**
+- Service commands require root privileges (`sudo`)
+- The service uses launchd
+- Service status: `sudo launchctl list | grep GeoStatsr`
+
+#### Standalone Mode
+
+If you prefer not to run as a service, you can run GeoStatsr in standalone mode:
+
+```bash
+# Run in standalone mode
+./geostatsr
+
+# Run with custom config file
+./geostatsr -c /path/to/config.yaml
+```
+
+The program will automatically fall back to standalone mode if service installation is not possible or if the service framework is not available.
+
 ### Running GeoStatsr
 ```powershell
 ./geostatsr.exe

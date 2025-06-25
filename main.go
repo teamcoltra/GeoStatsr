@@ -39,6 +39,7 @@ import (
 
 	_ "modernc.org/sqlite" // pure Go driver
 
+	"github.com/kardianos/service"
 	"github.com/paulmach/orb/geojson"
 	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
@@ -69,6 +70,107 @@ var (
 
 // Global country coder for name lookups
 var countryCoder *CountryCoder
+
+// Service related globals
+var (
+	httpServer *http.Server
+	logger     service.Logger
+)
+
+// GeoStatsr service struct
+type geoStatsrService struct{}
+
+func (s *geoStatsrService) Start(svc service.Service) error {
+	if logger != nil {
+		logger.Info("Starting GeoStatsr service")
+	}
+	go s.run()
+	return nil
+}
+
+func (s *geoStatsrService) Stop(svc service.Service) error {
+	if logger != nil {
+		logger.Info("Stopping GeoStatsr service")
+	}
+	if httpServer != nil {
+		return httpServer.Close()
+	}
+	return nil
+}
+
+func (s *geoStatsrService) run() {
+	// Initialize database and templates
+	initDB()
+	initTemplates()
+	countryCoder = NewCountryCoder() // Initialize global country coder
+	
+	// Setup HTTP server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/update_ncfa", apiUpdateCookie)
+	mux.HandleFunc("/api/collect_now", apiCollectNow)
+	mux.HandleFunc("/api/summary", apiSummary)
+	mux.HandleFunc("/api/games", apiGames)
+	mux.HandleFunc("/api/game", apiGame)
+	mux.HandleFunc("/api/game_map_data", apiGameMapData)
+	mux.HandleFunc("/api/country_stats", apiCountryStats)
+	mux.HandleFunc("/api/chart_data", apiChartData)
+	mux.HandleFunc("/api/map_data", apiMapData)
+	mux.HandleFunc("/api/countries_geojson", apiCountriesGeoJSON)
+	mux.HandleFunc("/api/confused_countries", apiConfusedCountries)
+	// Country-specific routes
+	mux.HandleFunc("/api/country/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if strings.HasSuffix(path, "/summary") {
+			apiCountrySummary(w, r)
+		} else if strings.HasSuffix(path, "/confused") {
+			apiCountryConfused(w, r)
+		} else if strings.HasSuffix(path, "/rounds") {
+			apiCountryRounds(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	mux.HandleFunc("/country/", uiCountry)
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.HandleFunc("/stats_row", uiStatsRow)
+	mux.HandleFunc("/", uiIndex)
+
+	listenAddr := fmt.Sprintf("%s:%d", config.ListenIP, config.Port)
+	httpServer = &http.Server{
+		Addr:    listenAddr,
+		Handler: mux,
+	}
+
+	if logger != nil {
+		logger.Infof("Server starting on %s – open http://localhost:%d/", listenAddr, config.Port)
+		if config.IsPublic {
+			logger.Infof("Running in PUBLIC mode - API updates require private key: %s", config.PrivateKey)
+		} else {
+			logger.Info("Running in PRIVATE mode - API updates do not require authentication")
+		}
+		if config.NCFA == "" {
+			logger.Warning("NCFA cookie not set. Use /api/update_ncfa?token=YOUR_COOKIE to set it.")
+		}
+	} else {
+		log.Printf("Server starting on %s – open http://localhost:%d/", listenAddr, config.Port)
+		if config.IsPublic {
+			log.Printf("Running in PUBLIC mode - API updates require private key: %s", config.PrivateKey)
+		} else {
+			log.Printf("Running in PRIVATE mode - API updates do not require authentication")
+		}
+		if config.NCFA == "" {
+			log.Printf("WARNING: NCFA cookie not set. Use /api/update_ncfa?token=YOUR_COOKIE to set it.")
+		}
+	}
+
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if logger != nil {
+			logger.Errorf("Server error: %v", err)
+		} else {
+			log.Printf("Server error: %v", err)
+		}
+	}
+}
 
 // ------------------------------------------------------------
 // Configuration management
@@ -2201,10 +2303,12 @@ func uiStatsRow(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	// Parse command line flags
+	var serviceAction string
 	pflag.StringVarP(&configPath, "config", "c", "./geostatsr.yaml", "Path to configuration file")
+	pflag.StringVarP(&serviceAction, "service", "s", "", "Service action: install, uninstall, start, stop, restart")
 	pflag.Parse()
 
-	// Load configuration
+	// Load configuration first
 	var err error
 	config, err = loadConfig()
 	if err != nil {
@@ -2220,51 +2324,135 @@ func main() {
 
 	debugLog("Starting GeoStatsr with config: %+v", config)
 
-	initDB()
-	initTemplates()
-	countryCoder = NewCountryCoder() // Initialize global country coder
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/update_ncfa", apiUpdateCookie)
-	mux.HandleFunc("/api/collect_now", apiCollectNow)
-	mux.HandleFunc("/api/summary", apiSummary)
-	mux.HandleFunc("/api/games", apiGames)
-	mux.HandleFunc("/api/game", apiGame)
-	mux.HandleFunc("/api/game_map_data", apiGameMapData)
-	mux.HandleFunc("/api/country_stats", apiCountryStats)
-	mux.HandleFunc("/api/chart_data", apiChartData)
-	mux.HandleFunc("/api/map_data", apiMapData)
-	mux.HandleFunc("/api/countries_geojson", apiCountriesGeoJSON)
-	mux.HandleFunc("/api/confused_countries", apiConfusedCountries)
-	// Country-specific routes
-	mux.HandleFunc("/api/country/", func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		if strings.HasSuffix(path, "/summary") {
-			apiCountrySummary(w, r)
-		} else if strings.HasSuffix(path, "/confused") {
-			apiCountryConfused(w, r)
-		} else if strings.HasSuffix(path, "/rounds") {
-			apiCountryRounds(w, r)
-		} else {
-			http.NotFound(w, r)
+	// Service configuration
+	svcConfig := &service.Config{
+		Name:        "GeoStatsr",
+		DisplayName: "GeoStatsr - GeoGuessr Statistics Server",
+		Description: "A web service that collects and displays GeoGuessr game statistics",
+		Arguments:   []string{"-c", configPath},
+	}
+
+	// Create service
+	prg := &geoStatsrService{}
+	svc, err := service.New(prg, svcConfig)
+	if err != nil {
+		log.Fatalf("Failed to create service: %v", err)
+	}
+
+	// Setup logger
+	logger, err = svc.Logger(nil)
+	if err != nil {
+		log.Printf("Warning: Failed to create service logger: %v", err)
+	}
+
+	// Handle service actions
+	if serviceAction != "" {
+		switch serviceAction {
+		case "install":
+			err = svc.Install()
+			if err != nil {
+				log.Fatalf("Failed to install service: %v", err)
+			}
+			fmt.Println("Service installed successfully")
+			return
+		case "uninstall":
+			err = svc.Uninstall()
+			if err != nil {
+				log.Fatalf("Failed to uninstall service: %v", err)
+			}
+			fmt.Println("Service uninstalled successfully")
+			return
+		case "start":
+			err = svc.Start()
+			if err != nil {
+				log.Fatalf("Failed to start service: %v", err)
+			}
+			fmt.Println("Service started successfully")
+			return
+		case "stop":
+			err = svc.Stop()
+			if err != nil {
+				log.Fatalf("Failed to stop service: %v", err)
+			}
+			fmt.Println("Service stopped successfully")
+			return
+		case "restart":
+			err = svc.Restart()
+			if err != nil {
+				log.Fatalf("Failed to restart service: %v", err)
+			}
+			fmt.Println("Service restarted successfully")
+			return
+		default:
+			log.Fatalf("Unknown service action: %s. Valid actions: install, uninstall, start, stop, restart", serviceAction)
 		}
-	})
-	mux.HandleFunc("/country/", uiCountry)
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-	mux.HandleFunc("/stats_row", uiStatsRow)
-	mux.HandleFunc("/", uiIndex)
-
-	listenAddr := fmt.Sprintf("%s:%d", config.ListenIP, config.Port)
-	log.Printf("Server starting on %s – open http://localhost:%d/", listenAddr, config.Port)
-	if config.IsPublic {
-		log.Printf("Running in PUBLIC mode - API updates require private key: %s", config.PrivateKey)
-	} else {
-		log.Printf("Running in PRIVATE mode - API updates do not require authentication")
-	}
-	if config.NCFA == "" {
-		log.Printf("WARNING: NCFA cookie not set. Use /api/update_ncfa?token=YOUR_COOKIE to set it.")
 	}
 
-	log.Fatal(http.ListenAndServe(listenAddr, mux))
+	// Run as service or standalone
+	err = svc.Run()
+	if err != nil {
+		// If running as service fails, try running standalone
+		if logger != nil {
+			logger.Info("Running in standalone mode")
+		} else {
+			log.Println("Running in standalone mode")
+		}
+		
+		// Setup debug logging for standalone mode
+		if config.Debug && config.LogDir != "" {
+			if err := os.MkdirAll(config.LogDir, 0755); err != nil {
+				log.Printf("Warning: Could not create log directory %s: %v", config.LogDir, err)
+			}
+		}
+
+		debugLog("Starting GeoStatsr with config: %+v", config)
+
+		initDB()
+		initTemplates()
+		countryCoder = NewCountryCoder() // Initialize global country coder
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/update_ncfa", apiUpdateCookie)
+		mux.HandleFunc("/api/collect_now", apiCollectNow)
+		mux.HandleFunc("/api/summary", apiSummary)
+		mux.HandleFunc("/api/games", apiGames)
+		mux.HandleFunc("/api/game", apiGame)
+		mux.HandleFunc("/api/game_map_data", apiGameMapData)
+		mux.HandleFunc("/api/country_stats", apiCountryStats)
+		mux.HandleFunc("/api/chart_data", apiChartData)
+		mux.HandleFunc("/api/map_data", apiMapData)
+		mux.HandleFunc("/api/countries_geojson", apiCountriesGeoJSON)
+		mux.HandleFunc("/api/confused_countries", apiConfusedCountries)
+		// Country-specific routes
+		mux.HandleFunc("/api/country/", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			if strings.HasSuffix(path, "/summary") {
+				apiCountrySummary(w, r)
+			} else if strings.HasSuffix(path, "/confused") {
+				apiCountryConfused(w, r)
+			} else if strings.HasSuffix(path, "/rounds") {
+				apiCountryRounds(w, r)
+			} else {
+				http.NotFound(w, r)
+			}
+		})
+		mux.HandleFunc("/country/", uiCountry)
+		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+		mux.HandleFunc("/stats_row", uiStatsRow)
+		mux.HandleFunc("/", uiIndex)
+
+		listenAddr := fmt.Sprintf("%s:%d", config.ListenIP, config.Port)
+		log.Printf("Server starting on %s – open http://localhost:%d/", listenAddr, config.Port)
+		if config.IsPublic {
+			log.Printf("Running in PUBLIC mode - API updates require private key: %s", config.PrivateKey)
+		} else {
+			log.Printf("Running in PRIVATE mode - API updates do not require authentication")
+		}
+		if config.NCFA == "" {
+			log.Printf("WARNING: NCFA cookie not set. Use /api/update_ncfa?token=YOUR_COOKIE to set it.")
+		}
+
+		log.Fatal(http.ListenAndServe(listenAddr, mux))
+	}
 }
 
 // Helper function to normalize game dates to ISO format

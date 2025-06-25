@@ -2,3 +2,6 @@ geostats.db
 geostatsr.exe
 TODO.txt
 geostatsr.yaml
+setup/*
+builds/*
+builder.py
