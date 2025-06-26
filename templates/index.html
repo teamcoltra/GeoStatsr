@@ -4,9 +4,9 @@
     <meta charset='utf-8'>
     <title>{{.Title}}</title>
     <link href="/static/css/bootstrap.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="//cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="//unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="//unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
 		.navbar {
 			border: none;
@@ -59,7 +59,8 @@
             transition: border-bottom 0.2s ease, background-color 0.1s ease;
         }
         .game-round-row:hover {
-            border-bottom: 4px solid #0d6efd !important;
+            border-right: 4px solid #000 !important;
+			border-bottom: 3px solid #000 !important;
         }
     </style>
 </head>
@@ -332,8 +333,15 @@
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('themeToggle').addEventListener('click', toggleTheme);
             loadTheme();
+            
+            // Parse URL hash for initial state
+            parseUrlHash();
+            
             loadAllData();
         });
+
+        // Listen for hash changes (when user navigates back/forward or clicks links)
+        window.addEventListener('hashchange', parseUrlHash);
 
         // Tab switching
         document.querySelectorAll('[data-target]').forEach(tab => {
@@ -375,6 +383,9 @@
                 gameMapMarkers = [];
                 originalGameMapView = null;
             }
+            
+            // Update URL hash
+            updateUrlHash();
             
             loadAllData();
         }
@@ -467,6 +478,39 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
+        // Parse URL hash for initial state
+        function parseUrlHash() {
+            const hash = window.location.hash;
+            if (hash && hash.startsWith('#!')) {
+                const params = new URLSearchParams(hash.substring(2)); // Remove #!
+                
+                if (params.get('gameType')) {
+                    const newGameType = params.get('gameType');
+                    if (newGameType !== currentGameType) {
+                        currentGameType = newGameType;
+                        switchGameType(newGameType);
+                    }
+                }
+                
+                if (params.get('gameId')) {
+                    const gameId = params.get('gameId');
+                    // Small delay to ensure the game type has been switched if needed
+                    setTimeout(() => {
+                        showGameDetails(gameId);
+                    }, 100);
+                }
+            }
+        }
+
+        // Update URL hash when state changes
+        function updateUrlHash() {
+            const params = new URLSearchParams();
+            if (currentGameType !== 'standard') params.set('gameType', currentGameType);
+            
+            const hash = params.toString();
+            window.location.hash = hash ? '#!' + hash : '';
+        }
+
         // Load all dashboard data
         async function loadAllData() {
             await Promise.all([
@@ -513,8 +557,9 @@
                 pointsTable.innerHTML = '';
                 data.slice(0, 10).forEach(country => {
                     const row = pointsTable.insertRow();
+                    const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
                     row.innerHTML = `
-                        <td>${country.country}</td>
+                        <td><a href="${countryLink}" style="text-decoration: none; color: inherit;">${country.country}</a></td>
                         <td>${Math.round(country.pointsLost)}</td>
                         <td>${country.count}</td>
                     `;
@@ -527,8 +572,9 @@
                 const sortedByDistance = [...data].sort((a, b) => b.distance - a.distance);
                 sortedByDistance.slice(0, 10).forEach(country => {
                     const row = distanceTable.insertRow();
+                    const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
                     row.innerHTML = `
-                        <td>${country.country}</td>
+                        <td><a href="${countryLink}" style="text-decoration: none; color: inherit;">${country.country}</a></td>
                         <td>${Math.round(country.distance)}</td>
                         <td>${country.count}</td>
                     `;
@@ -1114,7 +1160,14 @@
                             </div>
                         </div>
                     `;
-                    gameItem.addEventListener('click', () => showGameDetails(game.id));
+                    gameItem.addEventListener('click', () => {
+                        // Update URL hash and show game details
+                        const params = new URLSearchParams();
+                        if (currentGameType !== 'standard') params.set('gameType', currentGameType);
+                        params.set('gameId', game.id);
+                        window.location.hash = '#!' + params.toString();
+                        showGameDetails(game.id);
+                    });
                     gamesList.appendChild(gameItem);
                 });
             } catch (error) {
@@ -1185,7 +1238,7 @@
                         <tr class="${rowClass}" data-round="${round.round}" data-round-index="${index}">
                             <td>${round.round}</td>
                             <td>${Math.round(round.player)}</td>
-                            <td>${round.country || round.cc}</td>`;
+                            <td><a href="/country/${round.cc}#gameType=${currentGameType}" style="text-decoration: none; color: inherit;">${round.country || round.cc}</a></td>`;
                     
                     // Add singleplayer-specific columns
                     if (gameData.gameType === 'standard') {
@@ -1214,6 +1267,13 @@
                 `;
                 
                 gameDetail.innerHTML = html;
+                
+                // Scroll to game details section smoothly
+                const gameDetailsSection = document.getElementById('gameDetail');
+                gameDetailsSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
                 
                 // Load the game map
                 await loadGameMap(gameId);
@@ -1633,6 +1693,9 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadAllData();
         });
+        
+        // Parse URL hash for initial state
+        parseUrlHash();
     </script>
 </body>
 </html>

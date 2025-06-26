@@ -473,7 +473,8 @@
                 
                 rounds.forEach((round, index) => {
                     if (round.actualLat && round.actualLng) {
-                        const marker = L.circleMarker([round.actualLat, round.actualLng], {
+                        // Create correct location marker (always visible)
+                        const correctMarker = L.circleMarker([round.actualLat, round.actualLng], {
                             radius: 8,
                             fillColor: getScoreColor(round.playerScore),
                             color: '#fff',
@@ -489,10 +490,110 @@
                             Game: ${round.gameId.substring(0, 8)}...
                         `;
                         
-                        marker.bindPopup(popupContent);
-                        marker.addTo(countryMap);
-                        markers.push(marker);
+                        correctMarker.addTo(countryMap);
                         bounds.extend([round.actualLat, round.actualLng]);
+                        
+                        // Store references for showing/hiding guess markers and lines
+                        let guessMarker = null;
+                        let guessLine = null;
+                        
+                        // Create guess marker and line (initially hidden)
+                        if (round.playerLat && round.playerLng) {
+                            guessMarker = L.circleMarker([round.playerLat, round.playerLng], {
+                                radius: 6,
+                                fillColor: '#3498db',
+                                color: '#fff',
+                                weight: 2,
+                                opacity: 0,
+                                fillOpacity: 0
+                            });
+                            
+                            guessMarker.bindPopup(`
+                                <strong>Your Guess - Round ${round.roundNumber}</strong><br>
+                                Score: ${Math.round(round.playerScore)}<br>
+                                Distance: ${Math.round(round.distance)} km
+                            `);
+                            
+                            // Create connection line (initially hidden)
+                            guessLine = L.polyline([
+                                [round.playerLat, round.playerLng],
+                                [round.actualLat, round.actualLng]
+                            ], {
+                                color: '#e74c3c',
+                                weight: 3,
+                                opacity: 0,
+                                dashArray: '10, 5'
+                            });
+                            
+                            guessLine.bindTooltip(`Round ${round.roundNumber} - Connection line (${Math.round(round.distance)} km)`);
+                            
+                            // Add to map (but invisible)
+                            guessMarker.addTo(countryMap);
+                            guessLine.addTo(countryMap);
+                        }
+                        
+                        // Add click events to toggle guess marker and line
+                        let isShowing = false;
+                        let activeMarker = null; // Track globally active marker
+                        
+                        correctMarker.on('click', function() {
+                            if (guessMarker && round.playerLat && round.playerLng) {
+                                if (isShowing) {
+                                    // Hide this connection
+                                    guessMarker.setStyle({ opacity: 0, fillOpacity: 0 });
+                                    guessLine.setStyle({ opacity: 0 });
+                                    isShowing = false;
+                                    activeMarker = null;
+                                    
+                                    // Return to full view
+                                    if (bounds.isValid()) {
+                                        countryMap.fitBounds(bounds, { padding: [20, 20] });
+                                    }
+                                } else {
+                                    // Hide any other active connections first
+                                    if (window.activeCountryMarker && window.activeCountryMarker !== correctMarker) {
+                                        window.activeCountryMarker.fire('click'); // This will hide the other connection
+                                    }
+                                    
+                                    // Show this connection
+                                    guessMarker.setStyle({ opacity: 1, fillOpacity: 0.7 });
+                                    guessLine.setStyle({ opacity: 0.8 });
+                                    isShowing = true;
+                                    window.activeCountryMarker = correctMarker;
+                                    
+                                    // Zoom to show both markers and the connection
+                                    const connectionBounds = L.latLngBounds([
+                                        [round.actualLat, round.actualLng],
+                                        [round.playerLat, round.playerLng]
+                                    ]);
+                                    countryMap.fitBounds(connectionBounds, { 
+                                        padding: [50, 50],
+                                        maxZoom: 12 
+                                    });
+                                }
+                            }
+                        });
+                        
+                        // Change cursor to pointer to indicate clickable
+                        correctMarker.on('mouseover', function() {
+                            correctMarker._path.style.cursor = 'pointer';
+                        });
+                        
+                        // Update popup to indicate click functionality
+                        const clickPopupContent = `
+                            <strong>Round ${round.roundNumber}</strong><br>
+                            Score: ${Math.round(round.playerScore)}<br>
+                            Distance: ${Math.round(round.distance)} km<br>
+                            Game: ${round.gameId.substring(0, 8)}...<br>
+                            <em>Click to show/hide guess location</em>
+                        `;
+                        correctMarker.bindPopup(clickPopupContent);
+                        
+                        markers.push({
+                            correct: correctMarker,
+                            guess: guessMarker,
+                            line: guessLine
+                        });
                     }
                 });
                 

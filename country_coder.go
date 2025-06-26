@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -81,10 +83,30 @@ var (
 )
 
 // NewCountryCoder creates a new country coder from GeoJSON data
-func NewCountryCoder() *CountryCoder {
-	data, err := embeddedFS.ReadFile("countries.json")
-	if err != nil {
-		log.Fatalf("countries.json missing: %v", err)
+func NewCountryCoder(configDir string) *CountryCoder {
+	var data []byte
+	var err error
+
+	// Try to read from external countries.json in config directory first
+	if configDir != "" {
+		externalCountriesPath := filepath.Join(configDir, "countries.json")
+		if _, err := os.Stat(externalCountriesPath); err == nil {
+			data, err = os.ReadFile(externalCountriesPath)
+			if err == nil {
+				debugLog("DEBUG: Loaded countries.json from config directory: %s", externalCountriesPath)
+			} else {
+				log.Printf("Warning: Failed to read external countries.json: %v", err)
+			}
+		}
+	}
+
+	// Fall back to embedded countries.json if external file not found or failed to read
+	if data == nil {
+		data, err = embeddedFS.ReadFile("countries.json")
+		if err != nil {
+			log.Fatalf("countries.json missing: %v", err)
+		}
+		debugLog("DEBUG: Loaded countries.json from embedded file")
 	}
 
 	var collection RegionFeatureCollection

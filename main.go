@@ -45,6 +45,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const currentVersion = "0.5.0"
+
 //go:embed countries.json templates/*
 var embeddedFS embed.FS
 
@@ -64,8 +66,8 @@ type Config struct {
 
 // Global configuration
 var (
-	config     *Config
-	configPath string
+	config    *Config
+	configDir string
 )
 
 // Global country coder for name lookups
@@ -102,7 +104,7 @@ func (s *geoStatsrService) run() {
 	// Initialize database and templates
 	initDB()
 	initTemplates()
-	countryCoder = NewCountryCoder() // Initialize global country coder
+	countryCoder = NewCountryCoder(configDir) // Initialize global country coder
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
@@ -131,7 +133,40 @@ func (s *geoStatsrService) run() {
 		}
 	})
 	mux.HandleFunc("/country/", uiCountry)
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	// Static file handler with proper MIME types
+	staticDir := filepath.Join(configDir, "static")
+	fs := http.FileServer(http.Dir(staticDir))
+	mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
+		// Set proper MIME types based on file extension
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, ".css"):
+			w.Header().Set("Content-Type", "text/css")
+		case strings.HasSuffix(path, ".js"):
+			w.Header().Set("Content-Type", "text/javascript")
+		case strings.HasSuffix(path, ".json"):
+			w.Header().Set("Content-Type", "application/json")
+		case strings.HasSuffix(path, ".png"):
+			w.Header().Set("Content-Type", "image/png")
+		case strings.HasSuffix(path, ".jpg"), strings.HasSuffix(path, ".jpeg"):
+			w.Header().Set("Content-Type", "image/jpeg")
+		case strings.HasSuffix(path, ".gif"):
+			w.Header().Set("Content-Type", "image/gif")
+		case strings.HasSuffix(path, ".svg"):
+			w.Header().Set("Content-Type", "image/svg+xml")
+		case strings.HasSuffix(path, ".webp"):
+			w.Header().Set("Content-Type", "image/webp")
+		case strings.HasSuffix(path, ".woff2"):
+			w.Header().Set("Content-Type", "font/woff2")
+		case strings.HasSuffix(path, ".woff"):
+			w.Header().Set("Content-Type", "font/woff")
+		case strings.HasSuffix(path, ".ico"):
+			w.Header().Set("Content-Type", "image/x-icon")
+		}
+
+		// Remove the /static/ prefix and serve the file
+		http.StripPrefix("/static/", fs).ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/stats_row", uiStatsRow)
 	mux.HandleFunc("/", uiIndex)
 
@@ -140,6 +175,9 @@ func (s *geoStatsrService) run() {
 		Addr:    listenAddr,
 		Handler: mux,
 	}
+
+	// Start periodic tasks
+	startPeriodicTasks()
 
 	if logger != nil {
 		logger.Infof("Server starting on %s – open http://localhost:%d/", listenAddr, config.Port)
@@ -182,6 +220,15 @@ func generatePrivateKey() string {
 }
 
 func loadConfig() (*Config, error) {
+	// Ensure configDir is absolute path
+	var err error
+	configDir, err = filepath.Abs(configDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve config directory path: %v", err)
+	}
+
+	configPath := filepath.Join(configDir, "geostatsr.yaml")
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Create default config
 		defaultConfig := &Config{
@@ -193,7 +240,6 @@ func loadConfig() (*Config, error) {
 		}
 
 		// Check if config directory is writable
-		configDir := filepath.Dir(configPath)
 		if err := os.MkdirAll(configDir, 0755); err != nil {
 			return nil, fmt.Errorf("cannot create config directory %s: %v", configDir, err)
 		}
@@ -241,6 +287,8 @@ func loadConfig() (*Config, error) {
 }
 
 func saveConfig(cfg *Config) error {
+	configPath := filepath.Join(configDir, "geostatsr.yaml")
+
 	// Add comments to the YAML
 	configContent := `# GeoStatsr Configuration File
 # 
@@ -326,7 +374,8 @@ var db *sql.DB
 
 func initDB() {
 	var err error
-	db, err = sql.Open("sqlite", "file:geostats.db?_busy_timeout=30000&_fk=1")
+	dbPath := filepath.Join(configDir, "geostats.db")
+	db, err = sql.Open("sqlite", fmt.Sprintf("file:%s?_busy_timeout=30000&_fk=1", dbPath))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -337,7 +386,15 @@ CREATE TABLE IF NOT EXISTS games(
     movement TEXT,            -- Moving | NoMove | NMPZ
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     map_name TEXT,            -- name of the map played
-    game_date TIMESTAMP       -- actual game play date from API
+    game_date TIMESTAMP,      -- actual game play date from API
+    -- Duels result fields
+    is_draw BOOLEAN,          -- whether the duel ended in a draw
+    winning_team_id TEXT,     -- ID of the winning team
+    winner_style TEXT,        -- style of victory (e.g., "FlawlessVictory")
+    -- Opponent tracking fields for duels
+    opponent_id TEXT,         -- opponent player ID
+    opponent_nick TEXT,       -- opponent nickname
+    player_team_id TEXT       -- player's team ID
 );
 CREATE TABLE IF NOT EXISTS rounds(
     game_id TEXT,
@@ -402,12 +459,32 @@ CREATE TABLE IF NOT EXISTS competitive_rank(
 	}
 }
 
-// Initialize templates from embedded files
+// Initialize templates from embedded files or external directory
 func initTemplates() {
-	var err error
-	templates, err = template.ParseFS(embeddedFS, "templates/*.html")
-	if err != nil {
-		log.Fatalf("Failed to parse templates: %v", err)
+	// Check if templates exist in config directory
+	templatesDir := filepath.Join(configDir, "templates")
+	if _, err := os.Stat(templatesDir); err == nil {
+		// Use external templates from config directory
+		var parseErr error
+		templates, parseErr = template.ParseGlob(filepath.Join(templatesDir, "*.html"))
+		if parseErr != nil {
+			log.Printf("Warning: Failed to parse external templates from %s, falling back to embedded: %v", templatesDir, parseErr)
+			// Fall back to embedded templates
+			templates, parseErr = template.ParseFS(embeddedFS, "templates/*.html")
+			if parseErr != nil {
+				log.Fatalf("Failed to parse embedded templates: %v", parseErr)
+			}
+		} else {
+			log.Printf("Using external templates from %s", templatesDir)
+		}
+	} else {
+		// Use embedded templates
+		var parseErr error
+		templates, parseErr = template.ParseFS(embeddedFS, "templates/*.html")
+		if parseErr != nil {
+			log.Fatalf("Failed to parse embedded templates: %v", parseErr)
+		}
+		log.Printf("Using embedded templates")
 	}
 }
 
@@ -456,8 +533,11 @@ type v4Summary struct {
 					}
 				}
 				Teams []struct {
+					Id      string `json:"id"`
+					Name    string `json:"name"`
 					Players []struct {
-						PlayerId string
+						PlayerId string `json:"playerId"`
+						Nick     string `json:"nick"`
 						Guesses  []struct {
 							RoundNumber int     `json:"roundNumber"`
 							Score       float64 `json:"score"`
@@ -484,6 +564,11 @@ type v4Summary struct {
 					StartTime  int64   `json:"startTime"`
 					EndTime    int64   `json:"endTime"`
 				} `json:"rounds"`
+				Result struct {
+					IsDraw        bool   `json:"isDraw"`
+					WinningTeamId string `json:"winningTeamId"`
+					WinnerStyle   string `json:"winnerStyle"`
+				} `json:"result"`
 			}
 		}
 	}
@@ -739,22 +824,75 @@ func haversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
 
 func insertGame(id, typ, mov string, gameDate ...string) {
 	mapName := ""
+	var isDraw *bool
+	var winningTeamId *string
+	var winnerStyle *string
+	var opponentId *string
+	var opponentNick *string
+	var playerTeamId *string
+
 	if len(gameDate) > 1 && gameDate[1] != "" {
 		mapName = gameDate[1]
+	}
+
+	// Handle duels result data (gameDate[2], gameDate[3], gameDate[4])
+	if len(gameDate) > 2 && gameDate[2] != "" {
+		// Parse isDraw
+		if gameDate[2] == "true" {
+			isDraw = &[]bool{true}[0]
+		} else if gameDate[2] == "false" {
+			isDraw = &[]bool{false}[0]
+		}
+	}
+	if len(gameDate) > 3 && gameDate[3] != "" {
+		winningTeamId = &gameDate[3]
+	}
+	if len(gameDate) > 4 && gameDate[4] != "" {
+		winnerStyle = &gameDate[4]
+	}
+	// Handle opponent data (gameDate[5], gameDate[6], gameDate[7])
+	if len(gameDate) > 5 && gameDate[5] != "" {
+		opponentId = &gameDate[5]
+	}
+	if len(gameDate) > 6 && gameDate[6] != "" {
+		opponentNick = &gameDate[6]
+	}
+	if len(gameDate) > 7 && gameDate[7] != "" {
+		playerTeamId = &gameDate[7]
 	}
 
 	var err error
 	if len(gameDate) > 0 && gameDate[0] != "" {
 		normalizedDate := normalizeGameDate(gameDate[0])
-		if mapName != "" {
+		if mapName != "" && isDraw == nil {
+			// Standard game with map name
 			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement,game_date,map_name) VALUES(?,?,?,?,?)`, id, typ, mov, normalizedDate, mapName)
+		} else if mapName != "" && isDraw != nil {
+			// Duels game with map name and result
+			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement,game_date,map_name,is_draw,winning_team_id,winner_style,opponent_id,opponent_nick,player_team_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+				id, typ, mov, normalizedDate, mapName, isDraw, winningTeamId, winnerStyle, opponentId, opponentNick, playerTeamId)
+		} else if isDraw != nil {
+			// Duels game with result but no map name
+			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement,game_date,is_draw,winning_team_id,winner_style,opponent_id,opponent_nick,player_team_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+				id, typ, mov, normalizedDate, isDraw, winningTeamId, winnerStyle, opponentId, opponentNick, playerTeamId)
 		} else {
+			// Standard game without map name
 			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement,game_date) VALUES(?,?,?,?)`, id, typ, mov, normalizedDate)
 		}
 	} else {
-		if mapName != "" {
+		if mapName != "" && isDraw == nil {
+			// Standard game with map name, no date
 			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement,map_name) VALUES(?,?,?,?)`, id, typ, mov, mapName)
+		} else if mapName != "" && isDraw != nil {
+			// Duels game with map name and result, no date
+			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement,map_name,is_draw,winning_team_id,winner_style,opponent_id,opponent_nick,player_team_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+				id, typ, mov, mapName, isDraw, winningTeamId, winnerStyle, opponentId, opponentNick, playerTeamId)
+		} else if isDraw != nil {
+			// Duels game with result but no map name or date
+			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement,is_draw,winning_team_id,winner_style,opponent_id,opponent_nick,player_team_id) VALUES(?,?,?,?,?,?,?,?,?)`,
+				id, typ, mov, isDraw, winningTeamId, winnerStyle, opponentId, opponentNick, playerTeamId)
 		} else {
+			// Standard game without map name or date
 			_, err = db.Exec(`INSERT OR IGNORE INTO games(id,game_type,movement) VALUES(?,?,?)`, id, typ, mov)
 		}
 	}
@@ -883,9 +1021,34 @@ func storeDuels(id string, ci *countryIndex) {
 		// Convert Unix timestamp (milliseconds) to string for normalization
 		gameDate = fmt.Sprintf("%d", d.Props.PageProps.Game.Rounds[0].StartTime)
 	}
-	insertGame(id, "duels", mov, gameDate)
 
+	// Extract duels result information
+	result := d.Props.PageProps.Game.Result
+	isDraw := fmt.Sprintf("%t", result.IsDraw)
+	winningTeamId := result.WinningTeamId
+	winnerStyle := result.WinnerStyle
+
+	// Extract opponent information and player team ID
 	uid := d.Props.PageProps.UserId
+	var opponentId, opponentNick, playerTeamId string
+
+	for _, t := range d.Props.PageProps.Game.Teams {
+		if len(t.Players) == 0 {
+			continue
+		}
+
+		if t.Players[0].PlayerId == uid {
+			// This is the player's team
+			playerTeamId = t.Id
+		} else {
+			// This is the opponent's team
+			opponentId = t.Players[0].PlayerId
+			opponentNick = t.Players[0].Nick
+		}
+	}
+
+	insertGame(id, "duels", mov, gameDate, "", isDraw, winningTeamId, winnerStyle, opponentId, opponentNick, playerTeamId)
+
 	type GuessData struct {
 		RoundNumber int
 		Score       float64
@@ -1154,18 +1317,17 @@ func apiGames(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if typ == "duels" {
-		// For duels, include win/loss information
+		// For duels, use the stored game result to determine win/loss
 		rows, err = db.Query(`
 			SELECT g.id, g.movement, g.created, g.game_date,
 				   CASE 
-					   WHEN COUNT(CASE WHEN r.player_score > r.opponent_score THEN 1 END) > COUNT(CASE WHEN r.player_score < r.opponent_score THEN 1 END) THEN 'win'
-					   WHEN COUNT(CASE WHEN r.player_score > r.opponent_score THEN 1 END) < COUNT(CASE WHEN r.player_score < r.opponent_score THEN 1 END) THEN 'loss'
-					   ELSE 'draw'
+					   WHEN g.is_draw = 1 THEN 'draw'
+					   WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN 
+						   CASE WHEN g.winning_team_id = g.player_team_id THEN 'win' ELSE 'loss' END
+					   ELSE 'unknown'
 				   END as result
 			FROM games g 
-			LEFT JOIN rounds r ON g.id = r.game_id 
 			WHERE g.game_type=? 
-			GROUP BY g.id, g.movement, g.created, g.game_date
 			ORDER BY COALESCE(g.game_date, g.created) DESC 
 			LIMIT ?`, typ, limit)
 	} else {
@@ -1524,11 +1686,12 @@ func apiCollectNow(w http.ResponseWriter, r *http.Request) {
 // Enhanced API endpoints for dashboard
 
 type CountryStats struct {
-	Country    string  `json:"country"`
-	PointsLost float64 `json:"pointsLost"`
-	Distance   float64 `json:"distance"`
-	Count      int     `json:"count"`
-	AvgScore   float64 `json:"avgScore"`
+	Country     string  `json:"country"`
+	CountryCode string  `json:"countryCode"`
+	PointsLost  float64 `json:"pointsLost"`
+	Distance    float64 `json:"distance"`
+	Count       int     `json:"count"`
+	AvgScore    float64 `json:"avgScore"`
 }
 
 type ChartData struct {
@@ -1587,6 +1750,7 @@ func apiCountryStats(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		s.Country = countryCoder.NameEnByCode(countryCode) // Convert code to proper name
+		s.CountryCode = strings.ToUpper(countryCode)       // Include the country code
 		stats = append(stats, s)
 	}
 
@@ -1691,8 +1855,17 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 		// Country performance with win rates for duels
 		if gameType == "duels" {
 			query := `SELECT COALESCE(actual_country_code, country_code) as display_country, 
-				COUNT(*) as total,
-				SUM(CASE WHEN player_score > opponent_score THEN 1 ELSE 0 END) as wins
+				COUNT(DISTINCT g.id) as total,
+				SUM(CASE 
+					WHEN g.is_draw = 1 THEN 0
+					WHEN g.winning_team_id IS NOT NULL THEN 
+						(SELECT CASE 
+							WHEN COUNT(CASE WHEN r3.player_score > r3.opponent_score THEN 1 END) > COUNT(CASE WHEN r3.player_score < r3.opponent_score THEN 1 END) 
+							THEN 1 ELSE 0 END 
+						FROM rounds r3 
+						WHERE r3.game_id = g.id)
+					ELSE 0 
+				END) as wins
 				FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
 				GROUP BY display_country HAVING display_country != '??' AND total >= 1
 				ORDER BY total DESC LIMIT 10`
@@ -1772,8 +1945,13 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 		// Win rate by country for duels
 		if gameType == "duels" {
 			query := `SELECT COALESCE(actual_country_code, country_code) as display_country, 
-				COUNT(*) as total,
-				SUM(CASE WHEN player_score > opponent_score THEN 1 ELSE 0 END) as wins
+				COUNT(DISTINCT g.id) as total,
+				SUM(CASE 
+					WHEN g.is_draw = 1 THEN 0
+					WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN 
+						CASE WHEN g.winning_team_id = g.player_team_id THEN 1 ELSE 0 END
+					ELSE 0 
+				END) as wins
 				FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
 				GROUP BY display_country HAVING display_country != '??' AND total >= 2
 				ORDER BY total DESC LIMIT 10`
@@ -1855,6 +2033,59 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 				BorderColor:     "rgba(255, 99, 132, 1)",
 			}},
 		}
+
+	case "weeklyPerformance":
+		// Weekly performance showing average score and distance
+		query := `SELECT strftime('%Y-%W', COALESCE(g.game_date, g.created)) as week,
+			AVG(r.player_score) as avg_score,
+			AVG(r.player_dist) as avg_distance,
+			COUNT(*) as round_count
+			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
+			GROUP BY week
+			HAVING round_count >= 1
+			ORDER BY week`
+
+		rows, err := db.Query(query, args...)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer rows.Close()
+
+		var labels []string
+		var scoreData []float64
+		var distanceData []float64
+
+		for rows.Next() {
+			var week string
+			var avgScore, avgDistance float64
+			var roundCount int
+			rows.Scan(&week, &avgScore, &avgDistance, &roundCount)
+
+			// Format week label (e.g., "2025-24" -> "Week 24")
+			weekNum := week[5:] // Extract week number from "YYYY-WW"
+			labels = append(labels, "Week "+weekNum)
+			scoreData = append(scoreData, avgScore)
+			distanceData = append(distanceData, avgDistance)
+		}
+
+		chartData = ChartData{
+			Labels: labels,
+			Datasets: []Dataset{
+				{
+					Label:           "Average Score",
+					Data:            scoreData,
+					BackgroundColor: "rgba(52, 152, 219, 0.1)",
+					BorderColor:     "rgba(52, 152, 219, 1)",
+				},
+				{
+					Label:           "Average Distance (km)",
+					Data:            distanceData,
+					BackgroundColor: "rgba(231, 76, 60, 0.1)",
+					BorderColor:     "rgba(231, 76, 60, 1)",
+				},
+			},
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1880,6 +2111,8 @@ type CountryRound struct {
 	Distance      float64  `json:"distance"`
 	ActualLat     float64  `json:"actualLat"`
 	ActualLng     float64  `json:"actualLng"`
+	PlayerLat     float64  `json:"playerLat"`
+	PlayerLng     float64  `json:"playerLng"`
 	Created       string   `json:"created"`
 	GameDate      *string  `json:"gameDate,omitempty"`
 	Movement      string   `json:"movement"`
@@ -2060,12 +2293,12 @@ func apiCountryRounds(w http.ResponseWriter, r *http.Request) {
 	var query string
 	if typ == "duels" {
 		query = `SELECT g.id, r.round_no, r.player_score, r.opponent_score, r.player_dist,
-			r.actual_lat, r.actual_lng, g.created, g.game_date, g.movement
+			r.actual_lat, r.actual_lng, r.player_lat, r.player_lng, g.created, g.game_date, g.movement
 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
 			ORDER BY COALESCE(g.game_date, g.created) DESC, r.round_no ASC`
 	} else {
 		query = `SELECT g.id, r.round_no, r.player_score, NULL as opponent_score, r.player_dist,
-			r.actual_lat, r.actual_lng, g.created, g.game_date, g.movement, r.round_time, r.steps_count
+			r.actual_lat, r.actual_lng, r.player_lat, r.player_lng, g.created, g.game_date, g.movement, r.round_time, r.steps_count
 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
 			ORDER BY COALESCE(g.game_date, g.created) DESC, r.round_no ASC`
 	}
@@ -2087,12 +2320,12 @@ func apiCountryRounds(w http.ResponseWriter, r *http.Request) {
 
 		if typ == "duels" {
 			rows.Scan(&round.GameId, &round.RoundNumber, &round.PlayerScore, &opponentScore,
-				&round.Distance, &round.ActualLat, &round.ActualLng, &round.Created,
-				&gameDate, &round.Movement)
+				&round.Distance, &round.ActualLat, &round.ActualLng, &round.PlayerLat, &round.PlayerLng,
+				&round.Created, &gameDate, &round.Movement)
 		} else {
 			rows.Scan(&round.GameId, &round.RoundNumber, &round.PlayerScore, &opponentScore,
-				&round.Distance, &round.ActualLat, &round.ActualLng, &round.Created,
-				&gameDate, &round.Movement, &time, &steps)
+				&round.Distance, &round.ActualLat, &round.ActualLng, &round.PlayerLat, &round.PlayerLng,
+				&round.Created, &gameDate, &round.Movement, &time, &steps)
 		}
 
 		if opponentScore.Valid {
@@ -2151,9 +2384,6 @@ func uiCountry(w http.ResponseWriter, r *http.Request) {
 		debugLog("Template error: %v", err)
 	}
 }
-
-// ------------------------------------------------------------
-// Missing API endpoints
 
 func apiMapData(w http.ResponseWriter, r *http.Request) {
 	typ := r.URL.Query().Get("type")
@@ -2300,12 +2530,111 @@ func uiStatsRow(w http.ResponseWriter, r *http.Request) {
 }
 
 // ------------------------------------------------------------
+// Periodic task management
+
+// startPeriodicTasks starts background goroutines for periodic update checks and data collection
+func startPeriodicTasks() {
+	debugLog("Starting periodic tasks...")
+
+	// Start update checker (every 24 hours)
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				debugLog("Running periodic update check...")
+				checkAndPerformUpdate(true) // Always check for updates in periodic mode
+			}
+		}
+	}()
+
+	// Start data collector (every 6 hours)
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				debugLog("Running periodic data collection...")
+				performPeriodicCollection()
+			}
+		}
+	}()
+
+	if logger != nil {
+		logger.Info("Periodic tasks started: update check every 24h, data collection every 6h")
+	} else {
+		log.Println("Periodic tasks started: update check every 24h, data collection every 6h")
+	}
+}
+
+// performPeriodicCollection performs the same data collection as the API endpoint
+func performPeriodicCollection() {
+	// Check if NCFA is set
+	if config.NCFA == "" {
+		debugLog("Skipping periodic collection - NCFA cookie not set")
+		return
+	}
+
+	debugLog("Starting periodic collection...")
+	ci := loadCountries()
+
+	// First, collect user profile data
+	debugLog("Collecting user profile data...")
+	if err := collectUserProfile(); err != nil {
+		debugLog("Warning: Failed to collect user profile data: %v", err)
+		// Continue with game collection even if profile collection fails
+	}
+
+	debugLog("Starting pullFeed...")
+	std, duels := pullFeed()
+	debugLog("pullFeed returned: %d standard games, %d duels games", len(std), len(duels))
+
+	// Track successful imports by checking if games existed before
+	stdSuccess := 0
+	duelsSuccess := 0
+
+	debugLog("Starting to store standard games...")
+	for i, g := range std {
+		debugLog("Storing standard game %d/%d: %s", i+1, len(std), g)
+		existed := rowExists(`SELECT 1 FROM rounds WHERE game_id=? LIMIT 1`, g)
+		storeStandard(g, ci)
+		if !existed && rowExists(`SELECT 1 FROM rounds WHERE game_id=? LIMIT 1`, g) {
+			stdSuccess++
+		}
+	}
+
+	debugLog("Starting to store duels games...")
+	for i, d := range duels {
+		debugLog("Storing duels game %d/%d: %s", i+1, len(duels), d)
+		existed := rowExists(`SELECT 1 FROM rounds WHERE game_id=? LIMIT 1`, d)
+		storeDuels(d, ci)
+		if !existed && rowExists(`SELECT 1 FROM rounds WHERE game_id=? LIMIT 1`, d) {
+			duelsSuccess++
+		}
+	}
+
+	if logger != nil {
+		logger.Infof("Periodic collection completed: %d new games (%d singleplayer, %d duels)",
+			stdSuccess+duelsSuccess, stdSuccess, duelsSuccess)
+	} else {
+		log.Printf("Periodic collection completed: %d new games (%d singleplayer, %d duels)",
+			stdSuccess+duelsSuccess, stdSuccess, duelsSuccess)
+	}
+}
+
+// ------------------------------------------------------------
 
 func main() {
 	// Parse command line flags
 	var serviceAction string
-	pflag.StringVarP(&configPath, "config", "c", "./geostatsr.yaml", "Path to configuration file")
+	var autoUpdate bool
+	pflag.StringVarP(&configDir, "config", "c", "./", "Path to configuration directory")
 	pflag.StringVarP(&serviceAction, "service", "s", "", "Service action: install, uninstall, start, stop, restart")
+	pflag.BoolVar(&autoUpdate, "auto-update", true, "Enable automatic self-update")
 	pflag.Parse()
 
 	// Load configuration first
@@ -2322,14 +2651,26 @@ func main() {
 		}
 	}
 
-	debugLog("Starting GeoStatsr with config: %+v", config)
+	debugLog("Starting GeoStatsr v%s with config: %+v", currentVersion, config)
+
+	// Check for updates before starting the service (only if not running a service command)
+	if serviceAction == "" {
+		checkAndPerformUpdate(autoUpdate)
+	}
+
+	// Get the directory where the executable is located for service installation
+	executablePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Failed to get executable path: %v", err)
+	}
+	executableDir := filepath.Dir(executablePath)
 
 	// Service configuration
 	svcConfig := &service.Config{
 		Name:        "GeoStatsr",
 		DisplayName: "GeoStatsr - GeoGuessr Statistics Server",
 		Description: "A web service that collects and displays GeoGuessr game statistics",
-		Arguments:   []string{"-c", configPath},
+		Arguments:   []string{"-c", executableDir},
 	}
 
 	// Create service
@@ -2409,7 +2750,7 @@ func main() {
 
 		initDB()
 		initTemplates()
-		countryCoder = NewCountryCoder() // Initialize global country coder
+		countryCoder = NewCountryCoder(configDir) // Initialize global country coder
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/update_ncfa", apiUpdateCookie)
 		mux.HandleFunc("/api/collect_now", apiCollectNow)
@@ -2436,7 +2777,39 @@ func main() {
 			}
 		})
 		mux.HandleFunc("/country/", uiCountry)
-		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+		// Static file handler with proper MIME types
+		fs := http.FileServer(http.Dir("static"))
+		mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
+			// Set proper MIME types based on file extension
+			path := r.URL.Path
+			switch {
+			case strings.HasSuffix(path, ".css"):
+				w.Header().Set("Content-Type", "text/css")
+			case strings.HasSuffix(path, ".js"):
+				w.Header().Set("Content-Type", "text/javascript")
+			case strings.HasSuffix(path, ".json"):
+				w.Header().Set("Content-Type", "application/json")
+			case strings.HasSuffix(path, ".png"):
+				w.Header().Set("Content-Type", "image/png")
+			case strings.HasSuffix(path, ".jpg"), strings.HasSuffix(path, ".jpeg"):
+				w.Header().Set("Content-Type", "image/jpeg")
+			case strings.HasSuffix(path, ".gif"):
+				w.Header().Set("Content-Type", "image/gif")
+			case strings.HasSuffix(path, ".svg"):
+				w.Header().Set("Content-Type", "image/svg+xml")
+			case strings.HasSuffix(path, ".webp"):
+				w.Header().Set("Content-Type", "image/webp")
+			case strings.HasSuffix(path, ".woff2"):
+				w.Header().Set("Content-Type", "font/woff2")
+			case strings.HasSuffix(path, ".woff"):
+				w.Header().Set("Content-Type", "font/woff")
+			case strings.HasSuffix(path, ".ico"):
+				w.Header().Set("Content-Type", "image/x-icon")
+			}
+
+			// Remove the /static/ prefix and serve the file
+			http.StripPrefix("/static/", fs).ServeHTTP(w, r)
+		})
 		mux.HandleFunc("/stats_row", uiStatsRow)
 		mux.HandleFunc("/", uiIndex)
 
