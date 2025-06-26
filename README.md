@@ -22,6 +22,18 @@
 
 > 💡 Installers automatically pick the correct binary for your architecture and set up GeoStatsr as a system service.
 
+When it's successfully installed and started, you can open the web interface by going to [http://localhost:62826](http://localhost:62826). 
+
+**Install The Extension** if you're not technical the easiest thing to do is install our Chrome/Edge extension [here](https://github.com/teamcoltra/geostatsr-extension?tab=readme-ov-file#how-to-install-chrome--edge). This will automatically set the ncfa code for you and will automatically update GeoStatsr when you finish a game. 
+
+**Configuration** to update your configuation (and to set the ncfa code)
+   - **Windows**: C:\Program Files\GeoStatsr\geostatsr.yaml
+   - **macOS**: /usr/local/geostatsr/geostatsr.yaml
+   - **Linux**: /opt/geostatsr/geostatsr.yaml
+
+> 💡 See the [Configuration](#-configuration) section for details and keep reading to see how to get the ncfa code. 
+
+
 ---
 
 ## 🛠 Developer Mode
@@ -155,6 +167,8 @@ private_key: "auto-generated"
 ```http
 GET /api/update_ncfa?token=YOUR_NCFA_VALUE
 ```
+
+> If this doesn't make sense you can also try [This Guide](https://github.com/SafwanSipai/geo-insight?tab=readme-ov-file#getting-your-_ncfa-cookie)
 
 ---
 
