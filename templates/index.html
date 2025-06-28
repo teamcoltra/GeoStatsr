@@ -766,7 +766,7 @@
                     const pointsTable =
                         document.getElementById("pointsLostTable");
                     pointsTable.innerHTML = "";
-                    data.slice(0, 10).forEach((country) => {
+                    data.slice(0, 1000).forEach((country) => {
                         const row = pointsTable.insertRow();
                         const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
                         row.innerHTML = `
@@ -784,7 +784,7 @@
                     const sortedByDistance = [...data].sort(
                         (a, b) => b.distance - a.distance,
                     );
-                    sortedByDistance.slice(0, 10).forEach((country) => {
+                    sortedByDistance.slice(0, 1000).forEach((country) => {
                         const row = distanceTable.insertRow();
                         const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
                         row.innerHTML = `
@@ -899,27 +899,25 @@
 
             async function loadCountriesChart() {
                 try {
+                    // 1) fetch the combined count+avg for duels, count-only for standard
                     let url =
                         "/api/chart_data?chart=countryPerformance&type=" +
-                        currentGameType +
-                        (currentMovement ? "&move=" + currentMovement : "");
+                        currentGameType;
+                    if (currentMovement) url += "&move=" + currentMovement;
                     if (currentTimeline) url += "&timeline=" + currentTimeline;
+
                     const response = await fetch(url);
                     const data = await response.json();
-
                     const ctx = document
                         .getElementById("countriesChart")
                         .getContext("2d");
 
-                    if (countriesChart) {
-                        countriesChart.destroy();
-                    }
+                    if (countriesChart) countriesChart.destroy();
 
-                    // Configure chart type based on game type
                     const colors = getChartColors();
                     const chartConfig = {
                         type: "bar",
-                        data: data,
+                        data,
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
@@ -932,45 +930,15 @@
                                         footer: function (tooltipItems) {
                                             if (
                                                 currentGameType === "duels" &&
-                                                tooltipItems.length >= 2
+                                                tooltipItems.length === 2
                                             ) {
-                                                const total =
+                                                const played =
                                                     tooltipItems[0].raw;
-                                                const wins =
-                                                    tooltipItems[1].raw;
-                                                const winRate =
-                                                    total > 0
-                                                        ? (
-                                                              (wins / total) *
-                                                              100
-                                                          ).toFixed(1)
-                                                        : 0;
-                                                return `Win Rate: ${winRate}%`;
-                                            } else if (
-                                                currentGameType !== "duels"
-                                            ) {
-                                                // For single player games, show total rounds from dataset
-                                                const datasetIndex =
-                                                    tooltipItems[0]
-                                                        .datasetIndex;
-                                                const pointIndex =
-                                                    tooltipItems[0].dataIndex;
-                                                const dataset =
-                                                    data.datasets[datasetIndex];
-                                                if (
-                                                    dataset.totalRounds &&
-                                                    dataset.totalRounds[
-                                                        pointIndex
-                                                    ]
-                                                ) {
-                                                    const totalRounds =
-                                                        Math.round(
-                                                            dataset.totalRounds[
-                                                                pointIndex
-                                                            ],
-                                                        );
-                                                    return `Total Rounds: ${totalRounds}`;
-                                                }
+                                                const avg =
+                                                    tooltipItems[1].raw.toFixed(
+                                                        1,
+                                                    );
+                                                return `Games: ${played}   Avg Score: ${avg}`;
                                             }
                                             return "";
                                         },

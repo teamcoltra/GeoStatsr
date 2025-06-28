@@ -45,7 +45,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const currentVersion = "0.5.5"
+const currentVersion = "0.5.6"
 
 //go:embed countries.json templates/*
 var embeddedFS embed.FS
@@ -1825,46 +1825,55 @@ func apiCountryStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiChartData(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
 	chartType := r.URL.Query().Get("chart")
 	gameType := r.URL.Query().Get("type")
 	mov := r.URL.Query().Get("move")
 	timeline := r.URL.Query().Get("timeline")
 
-	whereGames := "WHERE game_type=?"
+	// Build the WHERE clause and arguments (including optional movement & timeline filters)
+	whereGames := "WHERE game_type = ?"
 	args := []interface{}{gameType}
+
 	if mov != "" {
-		whereGames += " AND movement=?"
+		whereGames += " AND movement = ?"
 		args = append(args, mov)
 	}
-	if timeline != "" {
-		if days, err := strconv.Atoi(timeline); err == nil && days > 0 {
-			whereGames += " AND game_date >= datetime('now', '-' || ? || ' days')"
-			args = append(args, days)
-		}
+	if days, err := strconv.Atoi(timeline); err == nil && days > 0 {
+		whereGames += " AND game_date >= datetime('now', '-' || ? || ' days')"
+		args = append(args, days)
 	}
 
 	var chartData ChartData
 
 	switch chartType {
-	case "countries", "countryPerformance":
-		// Most frequent countries - use actual country when available
-		query := `SELECT COALESCE(actual_country_code, country_code) as display_country, COUNT(*) as count
-			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-			GROUP BY display_country HAVING display_country != '??'
-			ORDER BY count DESC LIMIT 10`
+
+	case "countries":
+		// Most frequent countries (count only)
+		query := `
+            SELECT COALESCE(actual_country_code, country_code) AS display_country,
+                   COUNT(*) AS count
+            FROM rounds r
+            JOIN games  g ON g.id = r.game_id
+            ` + whereGames + `
+            GROUP BY display_country
+            HAVING display_country != '??'
+            ORDER BY count DESC
+            LIMIT 10`
 
 		rows, _ := db.Query(query, args...)
+		defer rows.Close()
+
 		var labels []string
 		var data []float64
 
 		for rows.Next() {
-			var countryCode string
-			var count float64
-			rows.Scan(&countryCode, &count)
-			labels = append(labels, countryCoder.NameEnByCode(countryCode))
-			data = append(data, count)
+			var cc string
+			var c float64
+			rows.Scan(&cc, &c)
+			labels = append(labels, countryCoder.NameEnByCode(cc))
+			data = append(data, c)
 		}
-		rows.Close()
 
 		chartData = ChartData{
 			Labels: labels,
@@ -1878,10 +1887,15 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 
 	case "scoreDistribution":
 		// Score distribution histogram
-		query := `SELECT player_score FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames
-		rows, _ := db.Query(query, args...)
+		query := `
+            SELECT player_score
+            FROM rounds r
+            JOIN games  g ON g.id = r.game_id
+            ` + whereGames
 
-		// Create buckets for score ranges
+		rows, _ := db.Query(query, args...)
+		defer rows.Close()
+
 		buckets := map[string]int{
 			"0-1000":    0,
 			"1000-2000": 0,
@@ -1906,12 +1920,11 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 				buckets["4000-5000"]++
 			}
 		}
-		rows.Close()
 
 		labels := []string{"0-1000", "1000-2000", "2000-3000", "3000-4000", "4000-5000"}
 		var data []float64
-		for _, label := range labels {
-			data = append(data, float64(buckets[label]))
+		for _, lbl := range labels {
+			data = append(data, float64(buckets[lbl]))
 		}
 
 		chartData = ChartData{
@@ -1924,138 +1937,141 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 			}},
 		}
 
-	// case "countryPerformance":
-	// 	// Country performance with win rates for duels
-	// 	if gameType == "duels" {
-	// 		query := `SELECT COALESCE(actual_country_code, country_code) as display_country,
-	// 			COUNT(DISTINCT g.id) as total,
-	// 			SUM(CASE
-	// 				WHEN g.is_draw = 1 THEN 0
-	// 				WHEN g.winning_team_id IS NOT NULL THEN
-	// 					(SELECT CASE
-	// 						WHEN COUNT(CASE WHEN r3.player_score > r3.opponent_score THEN 1 END) > COUNT(CASE WHEN r3.player_score < r3.opponent_score THEN 1 END)
-	// 						THEN 1 ELSE 0 END
-	// 					FROM rounds r3
-	// 					WHERE r3.game_id = g.id)
-	// 				ELSE 0
-	// 			END) as wins
-	// 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-	// 			GROUP BY display_country HAVING display_country != '??' AND total >= 1
-	// 			ORDER BY total DESC LIMIT 10`
+	case "countryPerformance":
+		// duels: count rounds & sum rounds won; standard: count rounds only
+		var query string
+		if gameType == "duels" {
+			query = `
+            SELECT
+              COALESCE(actual_country_code, country_code) AS display_country,
+              COUNT(*) AS rounds_played,
+              SUM(CASE WHEN r.player_score > r.opponent_score THEN 1 ELSE 0 END) AS rounds_won
+            FROM rounds r
+            JOIN games  g ON g.id = r.game_id
+            ` + whereGames + `
+            GROUP BY display_country
+            HAVING display_country != '??' AND rounds_played >= 1
+            ORDER BY rounds_played DESC
+            LIMIT 10`
+		} else {
+			query = `
+            SELECT
+              COALESCE(actual_country_code, country_code) AS display_country,
+              COUNT(*) AS rounds_played
+            FROM rounds r
+            JOIN games  g ON g.id = r.game_id
+            ` + whereGames + `
+            GROUP BY display_country
+            HAVING display_country != '??' AND rounds_played >= 1
+            ORDER BY rounds_played DESC
+            LIMIT 10`
+		}
 
-	// 		rows, _ := db.Query(query, args...)
-	// 		var labels []string
-	// 		var totalData []float64
-	// 		var winData []float64
+		rows, err := db.Query(query, args...)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
 
-	// 		for rows.Next() {
-	// 			var countryCode string
-	// 			var total, wins int
-	// 			rows.Scan(&countryCode, &total, &wins)
-	// 			labels = append(labels, countryCoder.NameEnByCode(countryCode))
-	// 			totalData = append(totalData, float64(total))
-	// 			winData = append(winData, float64(wins))
-	// 		}
-	// 		rows.Close()
+		var (
+			labels     []string
+			playedData []float64
+			wonData    []float64
+		)
 
-	// 		chartData = ChartData{
-	// 			Labels: labels,
-	// 			Datasets: []Dataset{
-	// 				{
-	// 					Label:           "Total Rounds",
-	// 					Data:            totalData,
-	// 					BackgroundColor: "rgba(54, 162, 235, 0.6)",
-	// 					BorderColor:     "rgba(54, 162, 235, 1)",
-	// 				},
-	// 				{
-	// 					Label:           "Wins",
-	// 					Data:            winData,
-	// 					BackgroundColor: "rgba(75, 192, 192, 0.6)",
-	// 					BorderColor:     "rgba(75, 192, 192, 1)",
-	// 				},
-	// 			},
-	// 		}
-	// 	} else {
-	// 		// For standard games, show average score by country only
-	// 		query := `SELECT COALESCE(actual_country_code, country_code) as display_country,
-	// 			COUNT(*) as total,
-	// 			AVG(player_score) as avg_score
-	// 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-	// 			GROUP BY display_country HAVING display_country != '??' AND total >= 1
-	// 			ORDER BY total DESC LIMIT 10`
+		for rows.Next() {
+			var cc string
+			var played int
+			if gameType == "duels" {
+				var won int
+				if err := rows.Scan(&cc, &played, &won); err != nil {
+					continue
+				}
+				labels = append(labels, countryCoder.NameEnByCode(cc))
+				playedData = append(playedData, float64(played))
+				wonData = append(wonData, float64(won))
+			} else {
+				if err := rows.Scan(&cc, &played); err != nil {
+					continue
+				}
+				labels = append(labels, countryCoder.NameEnByCode(cc))
+				playedData = append(playedData, float64(played))
+			}
+		}
 
-	// 		rows, _ := db.Query(query, args...)
-	// 		var labels []string
-	// 		var scoreData []float64
-	// 		var totalData []float64 // Store for tooltip data
+		datasets := []Dataset{{
+			Label:           "Rounds Played",
+			Data:            playedData,
+			BackgroundColor: "rgba(68, 217, 240, 0.6)",
+			BorderColor:     "rgba(68, 217, 240, 1)",
+		}}
+		if gameType == "duels" {
+			datasets = append(datasets, Dataset{
+				Label:           "Rounds Won",
+				Data:            wonData,
+				BackgroundColor: "rgba(104, 211, 145, 0.6)",
+				BorderColor:     "rgba(104, 211, 145, 1)",
+			})
+		}
 
-	// 		for rows.Next() {
-	// 			var countryCode string
-	// 			var total int
-	// 			var avgScore float64
-	// 			rows.Scan(&countryCode, &total, &avgScore)
-	// 			labels = append(labels, countryCoder.NameEnByCode(countryCode))
-	// 			scoreData = append(scoreData, avgScore)
-	// 			totalData = append(totalData, float64(total)) // Store for tooltip
-	// 		}
-	// 		rows.Close()
-
-	// 		chartData = ChartData{
-	// 			Labels: labels,
-	// 			Datasets: []Dataset{
-	// 				{
-	// 					Label:           "Avg Score",
-	// 					Data:            scoreData,
-	// 					BackgroundColor: "rgba(255, 206, 86, 0.6)",
-	// 					BorderColor:     "rgba(255, 206, 86, 1)",
-	// 					TotalRounds:     totalData, // Add total rounds for tooltip
-	// 				},
-	// 			},
-	// 		}
-	// 	}
+		chartData = ChartData{
+			Labels:   labels,
+			Datasets: datasets,
+		}
 
 	case "winRate":
-		// Win rate by country for duels
+		// Win rate by country (duels only)
 		if gameType == "duels" {
-			query := `SELECT COALESCE(actual_country_code, country_code) as display_country,
-				COUNT(DISTINCT g.id) as total,
-				SUM(CASE
-					WHEN g.is_draw = 1 THEN 0
-					WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN
-						CASE WHEN g.winning_team_id = g.player_team_id THEN 1 ELSE 0 END
-					ELSE 0
-				END) as wins
-				FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-				GROUP BY display_country HAVING display_country != '??' AND total >= 2
-				ORDER BY total DESC LIMIT 10`
+			query := `
+            SELECT
+              COALESCE(actual_country_code, country_code) AS display_country,
+              COUNT(*)                AS games_played,
+              SUM(
+                  CASE
+                    WHEN g.is_draw = 1 THEN 0
+                    WHEN g.winning_team_id IS NOT NULL
+                         AND g.player_team_id   IS NOT NULL
+                    THEN CASE WHEN g.winning_team_id = g.player_team_id
+                              THEN 1 ELSE 0 END
+                    ELSE 0
+                  END
+              ) AS wins
+            FROM rounds r
+            JOIN games  g ON g.id = r.game_id
+            ` + whereGames + `
+            GROUP BY display_country
+            HAVING display_country != '??' AND games_played >= 2
+            ORDER BY games_played DESC
+            LIMIT 10`
 
 			rows, _ := db.Query(query, args...)
+			defer rows.Close()
+
 			var labels []string
-			var totalData []float64
-			var winData []float64
+			var gp, wins []float64
 
 			for rows.Next() {
-				var country string
-				var total, wins int
-				rows.Scan(&country, &total, &wins)
-				labels = append(labels, country)
-				totalData = append(totalData, float64(total))
-				winData = append(winData, float64(wins))
+				var cc string
+				var g, w float64
+				rows.Scan(&cc, &g, &w)
+				labels = append(labels, countryCoder.NameEnByCode(cc))
+				gp = append(gp, g)
+				wins = append(wins, w)
 			}
-			rows.Close()
 
 			chartData = ChartData{
 				Labels: labels,
 				Datasets: []Dataset{
 					{
-						Label:           "Total Games",
-						Data:            totalData,
+						Label:           "Games Played",
+						Data:            gp,
 						BackgroundColor: "rgba(54, 162, 235, 0.6)",
 						BorderColor:     "rgba(54, 162, 235, 1)",
 					},
 					{
 						Label:           "Wins",
-						Data:            winData,
+						Data:            wins,
 						BackgroundColor: "rgba(75, 192, 192, 0.6)",
 						BorderColor:     "rgba(75, 192, 192, 1)",
 					},
@@ -2064,37 +2080,36 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "confusedCountries":
-		// Most confused country pairs - where players guess one country but it's actually another
-		query := `SELECT country_code, actual_country_code, COUNT(*) as confusion_count
-			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-			AND country_code != '??' AND actual_country_code != '??'
-			AND country_code != actual_country_code
-			GROUP BY country_code, actual_country_code
-			HAVING confusion_count >= 2
-			ORDER BY confusion_count DESC LIMIT 10`
+		// Most confused country pairs
+		query := `
+            SELECT
+              country_code,
+              actual_country_code,
+              COUNT(*) AS confusion_count
+            FROM rounds r
+            JOIN games  g ON g.id = r.game_id
+            ` + whereGames + `
+            AND country_code != '??'
+            AND actual_country_code != '??'
+            AND country_code != actual_country_code
+            GROUP BY country_code, actual_country_code
+            HAVING confusion_count >= 2
+            ORDER BY confusion_count DESC
+            LIMIT 10`
 
-		rows, err := db.Query(query, args...)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
+		rows, _ := db.Query(query, args...)
 		defer rows.Close()
 
 		var labels []string
 		var data []float64
 
 		for rows.Next() {
-			var guessedCode, actualCode string
-			var count float64
-			rows.Scan(&guessedCode, &actualCode, &count)
-
-			// Create label showing "Guessed Country → Actual Country"
-			guessedName := countryCoder.NameEnByCode(guessedCode)
-			actualName := countryCoder.NameEnByCode(actualCode)
-			label := guessedName + " → " + actualName
-
-			labels = append(labels, label)
-			data = append(data, count)
+			var gc, ac string
+			var c float64
+			rows.Scan(&gc, &ac, &c)
+			labels = append(labels,
+				countryCoder.NameEnByCode(gc)+" → "+countryCoder.NameEnByCode(ac))
+			data = append(data, c)
 		}
 
 		chartData = ChartData{
@@ -2108,38 +2123,37 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "weeklyPerformance":
-		// Weekly performance showing average score and distance
-		query := `SELECT strftime('%Y-%W', COALESCE(g.game_date, g.created)) as week,
-			AVG(r.player_score) as avg_score,
-			AVG(r.player_dist) as avg_distance,
-			COUNT(*) as round_count
-			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-			GROUP BY week
-			HAVING round_count >= 1
-			ORDER BY week`
+		// Weekly trend: avg score & distance
+		query := `
+            SELECT
+              strftime('%Y-%W', COALESCE(g.game_date, g.created)) AS week,
+              AVG(r.player_score)     AS avg_score,
+              AVG(r.player_dist)      AS avg_distance,
+              COUNT(*)                AS round_count
+            FROM rounds r
+            JOIN games  g ON g.id = r.game_id
+            ` + whereGames + `
+            GROUP BY week
+            HAVING round_count >= 1
+            ORDER BY week`
 
-		rows, err := db.Query(query, args...)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
+		rows, _ := db.Query(query, args...)
 		defer rows.Close()
 
-		var labels []string
-		var scoreData []float64
-		var distanceData []float64
+		var (
+			labels       []string
+			scoreData    []float64
+			distanceData []float64
+		)
 
 		for rows.Next() {
 			var week string
-			var avgScore, avgDistance float64
-			var roundCount int
-			rows.Scan(&week, &avgScore, &avgDistance, &roundCount)
-
-			// Format week label (e.g., "2025-24" -> "Week 24")
-			weekNum := week[5:] // Extract week number from "YYYY-WW"
-			labels = append(labels, "Week "+weekNum)
-			scoreData = append(scoreData, avgScore)
-			distanceData = append(distanceData, avgDistance)
+			var as, ad float64
+			var rc int
+			rows.Scan(&week, &as, &ad, &rc)
+			labels = append(labels, "Week "+week[5:])
+			scoreData = append(scoreData, as)
+			distanceData = append(distanceData, ad)
 		}
 
 		chartData = ChartData{
@@ -2159,6 +2173,10 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 				},
 			},
 		}
+
+	default:
+		http.Error(w, "unknown chart type", http.StatusBadRequest)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
