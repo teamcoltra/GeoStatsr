@@ -200,17 +200,29 @@ POST /api/endpoint?key=YOUR_PRIVATE_KEY
 
 Use `http://localhost:62826/stats_row` in a Browser Source in OBS.
 
+### Style Options
+
+You can now customize the overlay style and layout:
+
+- `style=geostatsr` (default): Classic GeoStatsr card style.
+- `style=geoguessr`: Horizontal bar inspired by GeoGuessr.
+    - `slant=slant-left` (default), `slant-right`, or `slant-both` for bar edge style.
+- `cards`: Comma-separated list of which stats to show (works for both styles).
+
 ### Examples:
 
 ```
-# Default (all stats)
+# Default (all stats, GeoStatsr style)
 http://localhost:62826/stats_row
 
-# Only show best country and score
+# Only show best country and score (GeoStatsr style)
 http://localhost:62826/stats_row?cards=avg_score,best_country
 
-# 7-day duel stats with NoMove
-http://localhost:62826/stats_row?type=duels&move=NoMove&timeline=7
+# GeoGuessr style, slant both, only show games and rounds
+http://localhost:62826/stats_row?style=geoguessr&slant=slant-both&cards=total_games,total_rounds
+
+# 7-day duel stats with NoMove, GeoGuessr style, slant right
+http://localhost:62826/stats_row?type=duels&move=NoMove&timeline=7&style=geoguessr&slant=slant-right
 ```
 
 ### Available Cards:

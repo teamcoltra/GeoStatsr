@@ -1,4 +1,4 @@
-// geostats.go – extended to cover Duels and richer statistics
+// geostats.go
 // build: go1.23
 // ------------------------------------------------------------
 // Features
@@ -45,7 +45,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const currentVersion = "0.5.0"
+const currentVersion = "0.5.5"
 
 //go:embed countries.json templates/*
 var embeddedFS embed.FS
@@ -133,6 +133,8 @@ func (s *geoStatsrService) run() {
 		}
 	})
 	mux.HandleFunc("/country/", uiCountry)
+	// Opponent UI route
+	mux.HandleFunc("/opponent/", uiOpponent)
 	// Static file handler with proper MIME types
 	staticDir := filepath.Join(configDir, "static")
 	fs := http.FileServer(http.Dir(staticDir))
@@ -169,6 +171,38 @@ func (s *geoStatsrService) run() {
 	})
 	mux.HandleFunc("/stats_row", uiStatsRow)
 	mux.HandleFunc("/", uiIndex)
+
+	// Opponent API endpoints
+	mux.HandleFunc("/api/opponent/", func(w http.ResponseWriter, r *http.Request) {
+		// /api/opponent/{id}/summary, /matches, /score-comparison, /countries, /performance
+		path := r.URL.Path
+		parts := strings.Split(path, "/")
+		if len(parts) < 4 {
+			http.NotFound(w, r)
+			return
+		}
+		opponentId := parts[3]
+		if len(parts) == 5 {
+			switch parts[4] {
+			case "summary":
+				apiOpponentSummary(w, r, opponentId)
+				return
+			case "matches":
+				apiOpponentMatches(w, r, opponentId)
+				return
+			case "score-comparison":
+				apiOpponentScoreComparison(w, r, opponentId)
+				return
+			case "countries":
+				apiOpponentCountries(w, r, opponentId)
+				return
+			case "performance":
+				apiOpponentPerformance(w, r, opponentId)
+				return
+			}
+		}
+		http.NotFound(w, r)
+	})
 
 	listenAddr := fmt.Sprintf("%s:%d", config.ListenIP, config.Port)
 	httpServer = &http.Server{
@@ -291,7 +325,7 @@ func saveConfig(cfg *Config) error {
 
 	// Add comments to the YAML
 	configContent := `# GeoStatsr Configuration File
-# 
+#
 # ncfa: Your GeoGuessr NCFA cookie value (leave empty initially, update via API)
 ncfa: "` + cfg.NCFA + `"
 
@@ -945,7 +979,7 @@ func storeStandard(id string, ci *countryIndex) {
 
 	tx, _ := db.Begin()
 	stmt, _ := tx.Prepare(`INSERT OR IGNORE INTO rounds(
-		game_id, round_no, player_score, 
+		game_id, round_no, player_score,
 		player_lat, player_lng, player_dist, country_code,
 		actual_lat, actual_lng, actual_country_code,
 		round_time, steps_count, timed_out, score_percentage
@@ -1140,11 +1174,11 @@ func storeDuels(id string, ci *countryIndex) {
 
 	tx, _ := db.Begin()
 	stmt, _ := tx.Prepare(`INSERT OR IGNORE INTO rounds(
-		game_id, round_no, player_score, opponent_score, 
-		player_lat, player_lng, opponent_lat, opponent_lng, 
+		game_id, round_no, player_score, opponent_score,
+		player_lat, player_lng, opponent_lat, opponent_lng,
 		player_dist, opponent_dist, country_code,
 		actual_lat, actual_lng, actual_country_code,
-		round_multiplier, 
+		round_multiplier,
 		player_health_before, player_health_after,
 		opponent_health_before, opponent_health_after,
 		round_start_time, round_end_time
@@ -1304,7 +1338,23 @@ func summaryStatsWithTimeline(gameType, movement string, timelineDays int) (*agg
 func apiSummary(w http.ResponseWriter, r *http.Request) {
 	typ := r.URL.Query().Get("type") // standard|duels
 	mov := r.URL.Query().Get("move") // Moving|NoMove|NMPZ
-	res, _ := summaryStats(typ, mov)
+	timeline := r.URL.Query().Get("timeline")
+
+	var res *agg
+	//var err error
+
+	if timeline != "" {
+		if days, errConv := strconv.Atoi(timeline); errConv == nil && days > 0 {
+			res, _ = summaryStatsWithTimeline(typ, mov, days)
+		} else {
+			tmp, _ := summaryStats(typ, mov)
+			res = &tmp
+		}
+	} else {
+		tmp, _ := summaryStats(typ, mov)
+		res = &tmp
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
@@ -1320,27 +1370,27 @@ func apiGames(w http.ResponseWriter, r *http.Request) {
 		// For duels, use the stored game result to determine win/loss
 		rows, err = db.Query(`
 			SELECT g.id, g.movement, g.created, g.game_date,
-				   CASE 
+				   CASE
 					   WHEN g.is_draw = 1 THEN 'draw'
-					   WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN 
+					   WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN
 						   CASE WHEN g.winning_team_id = g.player_team_id THEN 'win' ELSE 'loss' END
 					   ELSE 'unknown'
 				   END as result
-			FROM games g 
-			WHERE g.game_type=? 
-			ORDER BY COALESCE(g.game_date, g.created) DESC 
+			FROM games g
+			WHERE g.game_type=?
+			ORDER BY COALESCE(g.game_date, g.created) DESC
 			LIMIT ?`, typ, limit)
 	} else {
 		// For standard games, include map name and total score
 		rows, err = db.Query(`
-			SELECT g.id, g.movement, g.created, g.game_date, 
+			SELECT g.id, g.movement, g.created, g.game_date,
 				   COALESCE(g.map_name, '') as map_name,
 				   COALESCE(SUM(r.player_score), 0) as total_score
-			FROM games g 
-			LEFT JOIN rounds r ON g.id = r.game_id 
-			WHERE g.game_type=? 
+			FROM games g
+			LEFT JOIN rounds r ON g.id = r.game_id
+			WHERE g.game_type=?
 			GROUP BY g.id, g.movement, g.created, g.game_date, g.map_name
-			ORDER BY COALESCE(g.game_date, g.created) DESC 
+			ORDER BY COALESCE(g.game_date, g.created) DESC
 			LIMIT ?`, typ, limit)
 	}
 
@@ -1400,10 +1450,10 @@ func apiGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// First get game info including map name
-	var gameType, mapName string
-	gameRow := db.QueryRow(`SELECT game_type, COALESCE(map_name, '') FROM games WHERE id=?`, id)
-	err := gameRow.Scan(&gameType, &mapName)
+	// First get game info including map name, opponent_id, and opponent_nick
+	var gameType, mapName, opponentId, opponentNick string
+	gameRow := db.QueryRow(`SELECT game_type, COALESCE(map_name, ''), COALESCE(opponent_id, ''), COALESCE(opponent_nick, '') FROM games WHERE id=?`, id)
+	err := gameRow.Scan(&gameType, &mapName, &opponentId, &opponentNick)
 	if err != nil {
 		debugLog("Error fetching game info for id %s: %v", id, err)
 		http.Error(w, "game not found", 404)
@@ -1414,11 +1464,11 @@ func apiGame(w http.ResponseWriter, r *http.Request) {
 	var query string
 	if gameType == "standard" {
 		query = `SELECT round_no,player_score,opponent_score,player_lat,player_lng,country_code,actual_country_code,
-				round_time,steps_count,timed_out,score_percentage,player_dist 
+				round_time,steps_count,timed_out,score_percentage,player_dist
 				FROM rounds WHERE game_id=? ORDER BY round_no`
 	} else {
 		query = `SELECT round_no,player_score,opponent_score,player_lat,player_lng,country_code,actual_country_code,
-				0 as round_time,0 as steps_count,0 as timed_out,0 as score_percentage,player_dist 
+				0 as round_time,0 as steps_count,0 as timed_out,0 as score_percentage,player_dist
 				FROM rounds WHERE game_id=? ORDER BY round_no`
 	}
 
@@ -1434,6 +1484,10 @@ func apiGame(w http.ResponseWriter, r *http.Request) {
 		"gameType": gameType,
 		"mapName":  mapName,
 		"rounds":   []map[string]any{},
+	}
+	if gameType == "duels" {
+		result["opponentId"] = opponentId
+		result["opponentNick"] = opponentNick
 	}
 
 	for rows.Next() {
@@ -1500,11 +1554,11 @@ func apiGameMapData(w http.ResponseWriter, r *http.Request) {
 
 	// Query both player and actual location data for the game map
 	rows, err := db.Query(`
-		SELECT round_no, player_score, opponent_score, player_lat, player_lng, 
-		       opponent_lat, opponent_lng, country_code, actual_lat, actual_lng, 
+		SELECT round_no, player_score, opponent_score, player_lat, player_lng,
+		       opponent_lat, opponent_lng, country_code, actual_lat, actual_lng,
 		       actual_country_code, player_dist
-		FROM rounds 
-		WHERE game_id=? 
+		FROM rounds
+		WHERE game_id=?
 		ORDER BY round_no`, id)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -1717,6 +1771,7 @@ type CountryConfusion struct {
 func apiCountryStats(w http.ResponseWriter, r *http.Request) {
 	typ := r.URL.Query().Get("type")
 	mov := r.URL.Query().Get("move")
+	timeline := r.URL.Query().Get("timeline")
 
 	whereGames := "WHERE game_type=?"
 	args := []interface{}{typ}
@@ -1724,8 +1779,14 @@ func apiCountryStats(w http.ResponseWriter, r *http.Request) {
 		whereGames += " AND movement=?"
 		args = append(args, mov)
 	}
+	if timeline != "" {
+		if days, err := strconv.Atoi(timeline); err == nil && days > 0 {
+			whereGames += " AND game_date >= datetime('now', '-' || ? || ' days')"
+			args = append(args, days)
+		}
+	}
 
-	query := `SELECT COALESCE(actual_country_code, country_code) as display_country, 
+	query := `SELECT COALESCE(actual_country_code, country_code) as display_country,
 		AVG(5000 - player_score) as points_lost,
 		AVG(player_dist) as avg_distance,
 		COUNT(*) as count,
@@ -1766,18 +1827,30 @@ func apiCountryStats(w http.ResponseWriter, r *http.Request) {
 func apiChartData(w http.ResponseWriter, r *http.Request) {
 	chartType := r.URL.Query().Get("chart")
 	gameType := r.URL.Query().Get("type")
+	mov := r.URL.Query().Get("move")
+	timeline := r.URL.Query().Get("timeline")
 
 	whereGames := "WHERE game_type=?"
 	args := []interface{}{gameType}
+	if mov != "" {
+		whereGames += " AND movement=?"
+		args = append(args, mov)
+	}
+	if timeline != "" {
+		if days, err := strconv.Atoi(timeline); err == nil && days > 0 {
+			whereGames += " AND game_date >= datetime('now', '-' || ? || ' days')"
+			args = append(args, days)
+		}
+	}
 
 	var chartData ChartData
 
 	switch chartType {
-	case "countries":
+	case "countries", "countryPerformance":
 		// Most frequent countries - use actual country when available
-		query := `SELECT COALESCE(actual_country_code, country_code) as display_country, COUNT(*) as count 
+		query := `SELECT COALESCE(actual_country_code, country_code) as display_country, COUNT(*) as count
 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-			GROUP BY display_country HAVING display_country != '??' 
+			GROUP BY display_country HAVING display_country != '??'
 			ORDER BY count DESC LIMIT 10`
 
 		rows, _ := db.Query(query, args...)
@@ -1851,106 +1924,106 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 			}},
 		}
 
-	case "countryPerformance":
-		// Country performance with win rates for duels
-		if gameType == "duels" {
-			query := `SELECT COALESCE(actual_country_code, country_code) as display_country, 
-				COUNT(DISTINCT g.id) as total,
-				SUM(CASE 
-					WHEN g.is_draw = 1 THEN 0
-					WHEN g.winning_team_id IS NOT NULL THEN 
-						(SELECT CASE 
-							WHEN COUNT(CASE WHEN r3.player_score > r3.opponent_score THEN 1 END) > COUNT(CASE WHEN r3.player_score < r3.opponent_score THEN 1 END) 
-							THEN 1 ELSE 0 END 
-						FROM rounds r3 
-						WHERE r3.game_id = g.id)
-					ELSE 0 
-				END) as wins
-				FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-				GROUP BY display_country HAVING display_country != '??' AND total >= 1
-				ORDER BY total DESC LIMIT 10`
+	// case "countryPerformance":
+	// 	// Country performance with win rates for duels
+	// 	if gameType == "duels" {
+	// 		query := `SELECT COALESCE(actual_country_code, country_code) as display_country,
+	// 			COUNT(DISTINCT g.id) as total,
+	// 			SUM(CASE
+	// 				WHEN g.is_draw = 1 THEN 0
+	// 				WHEN g.winning_team_id IS NOT NULL THEN
+	// 					(SELECT CASE
+	// 						WHEN COUNT(CASE WHEN r3.player_score > r3.opponent_score THEN 1 END) > COUNT(CASE WHEN r3.player_score < r3.opponent_score THEN 1 END)
+	// 						THEN 1 ELSE 0 END
+	// 					FROM rounds r3
+	// 					WHERE r3.game_id = g.id)
+	// 				ELSE 0
+	// 			END) as wins
+	// 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
+	// 			GROUP BY display_country HAVING display_country != '??' AND total >= 1
+	// 			ORDER BY total DESC LIMIT 10`
 
-			rows, _ := db.Query(query, args...)
-			var labels []string
-			var totalData []float64
-			var winData []float64
+	// 		rows, _ := db.Query(query, args...)
+	// 		var labels []string
+	// 		var totalData []float64
+	// 		var winData []float64
 
-			for rows.Next() {
-				var countryCode string
-				var total, wins int
-				rows.Scan(&countryCode, &total, &wins)
-				labels = append(labels, countryCoder.NameEnByCode(countryCode))
-				totalData = append(totalData, float64(total))
-				winData = append(winData, float64(wins))
-			}
-			rows.Close()
+	// 		for rows.Next() {
+	// 			var countryCode string
+	// 			var total, wins int
+	// 			rows.Scan(&countryCode, &total, &wins)
+	// 			labels = append(labels, countryCoder.NameEnByCode(countryCode))
+	// 			totalData = append(totalData, float64(total))
+	// 			winData = append(winData, float64(wins))
+	// 		}
+	// 		rows.Close()
 
-			chartData = ChartData{
-				Labels: labels,
-				Datasets: []Dataset{
-					{
-						Label:           "Total Rounds",
-						Data:            totalData,
-						BackgroundColor: "rgba(54, 162, 235, 0.6)",
-						BorderColor:     "rgba(54, 162, 235, 1)",
-					},
-					{
-						Label:           "Wins",
-						Data:            winData,
-						BackgroundColor: "rgba(75, 192, 192, 0.6)",
-						BorderColor:     "rgba(75, 192, 192, 1)",
-					},
-				},
-			}
-		} else {
-			// For standard games, show average score by country only
-			query := `SELECT COALESCE(actual_country_code, country_code) as display_country, 
-				COUNT(*) as total,
-				AVG(player_score) as avg_score
-				FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-				GROUP BY display_country HAVING display_country != '??' AND total >= 1
-				ORDER BY total DESC LIMIT 10`
+	// 		chartData = ChartData{
+	// 			Labels: labels,
+	// 			Datasets: []Dataset{
+	// 				{
+	// 					Label:           "Total Rounds",
+	// 					Data:            totalData,
+	// 					BackgroundColor: "rgba(54, 162, 235, 0.6)",
+	// 					BorderColor:     "rgba(54, 162, 235, 1)",
+	// 				},
+	// 				{
+	// 					Label:           "Wins",
+	// 					Data:            winData,
+	// 					BackgroundColor: "rgba(75, 192, 192, 0.6)",
+	// 					BorderColor:     "rgba(75, 192, 192, 1)",
+	// 				},
+	// 			},
+	// 		}
+	// 	} else {
+	// 		// For standard games, show average score by country only
+	// 		query := `SELECT COALESCE(actual_country_code, country_code) as display_country,
+	// 			COUNT(*) as total,
+	// 			AVG(player_score) as avg_score
+	// 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
+	// 			GROUP BY display_country HAVING display_country != '??' AND total >= 1
+	// 			ORDER BY total DESC LIMIT 10`
 
-			rows, _ := db.Query(query, args...)
-			var labels []string
-			var scoreData []float64
-			var totalData []float64 // Store for tooltip data
+	// 		rows, _ := db.Query(query, args...)
+	// 		var labels []string
+	// 		var scoreData []float64
+	// 		var totalData []float64 // Store for tooltip data
 
-			for rows.Next() {
-				var countryCode string
-				var total int
-				var avgScore float64
-				rows.Scan(&countryCode, &total, &avgScore)
-				labels = append(labels, countryCoder.NameEnByCode(countryCode))
-				scoreData = append(scoreData, avgScore)
-				totalData = append(totalData, float64(total)) // Store for tooltip
-			}
-			rows.Close()
+	// 		for rows.Next() {
+	// 			var countryCode string
+	// 			var total int
+	// 			var avgScore float64
+	// 			rows.Scan(&countryCode, &total, &avgScore)
+	// 			labels = append(labels, countryCoder.NameEnByCode(countryCode))
+	// 			scoreData = append(scoreData, avgScore)
+	// 			totalData = append(totalData, float64(total)) // Store for tooltip
+	// 		}
+	// 		rows.Close()
 
-			chartData = ChartData{
-				Labels: labels,
-				Datasets: []Dataset{
-					{
-						Label:           "Avg Score",
-						Data:            scoreData,
-						BackgroundColor: "rgba(255, 206, 86, 0.6)",
-						BorderColor:     "rgba(255, 206, 86, 1)",
-						TotalRounds:     totalData, // Add total rounds for tooltip
-					},
-				},
-			}
-		}
+	// 		chartData = ChartData{
+	// 			Labels: labels,
+	// 			Datasets: []Dataset{
+	// 				{
+	// 					Label:           "Avg Score",
+	// 					Data:            scoreData,
+	// 					BackgroundColor: "rgba(255, 206, 86, 0.6)",
+	// 					BorderColor:     "rgba(255, 206, 86, 1)",
+	// 					TotalRounds:     totalData, // Add total rounds for tooltip
+	// 				},
+	// 			},
+	// 		}
+	// 	}
 
 	case "winRate":
 		// Win rate by country for duels
 		if gameType == "duels" {
-			query := `SELECT COALESCE(actual_country_code, country_code) as display_country, 
+			query := `SELECT COALESCE(actual_country_code, country_code) as display_country,
 				COUNT(DISTINCT g.id) as total,
-				SUM(CASE 
+				SUM(CASE
 					WHEN g.is_draw = 1 THEN 0
-					WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN 
+					WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN
 						CASE WHEN g.winning_team_id = g.player_team_id THEN 1 ELSE 0 END
-					ELSE 0 
+					ELSE 0
 				END) as wins
 				FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
 				GROUP BY display_country HAVING display_country != '??' AND total >= 2
@@ -1994,7 +2067,7 @@ func apiChartData(w http.ResponseWriter, r *http.Request) {
 		// Most confused country pairs - where players guess one country but it's actually another
 		query := `SELECT country_code, actual_country_code, COUNT(*) as confusion_count
 			FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-			AND country_code != '??' AND actual_country_code != '??' 
+			AND country_code != '??' AND actual_country_code != '??'
 			AND country_code != actual_country_code
 			GROUP BY country_code, actual_country_code
 			HAVING confusion_count >= 2
@@ -2166,7 +2239,7 @@ func apiCountrySummary(w http.ResponseWriter, r *http.Request) {
 	db.QueryRow("SELECT COALESCE(AVG(player_dist),0) FROM rounds r JOIN games g ON g.id=r.game_id "+whereGames, args...).Scan(&summary.AvgDistance)
 
 	// Get most confused with (where actual country is our target but player guessed elsewhere)
-	confusedQuery := `SELECT country_code, COUNT(*) as count 
+	confusedQuery := `SELECT country_code, COUNT(*) as count
 		FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
 		AND country_code != COALESCE(actual_country_code, country_code)
 		AND country_code != '??'
@@ -2464,7 +2537,7 @@ func apiConfusedCountries(w http.ResponseWriter, r *http.Request) {
 
 	query := `SELECT country_code as guessed, actual_country_code as actual, COUNT(*) as count
 		FROM rounds r JOIN games g ON g.id=r.game_id ` + whereGames + `
-		AND country_code != '??' AND actual_country_code != '??' 
+		AND country_code != '??' AND actual_country_code != '??'
 		AND country_code != actual_country_code
 		GROUP BY country_code, actual_country_code
 		HAVING count >= 2
@@ -2475,6 +2548,7 @@ func apiConfusedCountries(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+
 	defer rows.Close()
 
 	var result []map[string]interface{}
@@ -2494,6 +2568,268 @@ func apiConfusedCountries(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// Serve the opponent HTML UI
+func uiOpponent(w http.ResponseWriter, r *http.Request) {
+	// Extract opponent ID from URL path
+	path := r.URL.Path
+	parts := strings.Split(path, "/")
+	if len(parts) < 3 || parts[1] != "opponent" {
+		http.Error(w, "Invalid opponent path", 400)
+		return
+	}
+	opponentId := parts[2]
+	opponentNick := opponentId // fallback
+
+	// Try to get the latest known nick for this opponent from the DB
+	row := db.QueryRow("SELECT opponent_nick FROM games WHERE opponent_id=? AND opponent_nick != '' ORDER BY created DESC LIMIT 1", opponentId)
+	_ = row.Scan(&opponentNick)
+
+	data := struct {
+		OpponentId   string
+		OpponentNick string
+		IsPublic     bool
+	}{
+		OpponentId:   opponentId,
+		OpponentNick: opponentNick,
+		IsPublic:     config.IsPublic,
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	if err := templates.ExecuteTemplate(w, "opponent.html", data); err != nil {
+		http.Error(w, err.Error(), 500)
+		debugLog("Template error: %v", err)
+	}
+}
+
+// --- Opponent API endpoints ---
+
+// /api/opponent/{id}/summary
+func apiOpponentSummary(w http.ResponseWriter, r *http.Request, opponentId string) {
+	move := r.URL.Query().Get("move")
+	timeline := r.URL.Query().Get("timeline")
+
+	where := "WHERE g.game_type='duels' AND g.opponent_id=?"
+	args := []interface{}{opponentId}
+	if move != "" {
+		where += " AND g.movement=?"
+		args = append(args, move)
+	}
+	if timeline != "" {
+		where += " AND g.created >= datetime('now', ?)"
+		args = append(args, "-"+timeline+" days")
+	}
+
+	var total, wins, losses, draws, daysSinceLast int
+	_ = db.QueryRow("SELECT COUNT(*) FROM games g "+where, args...).Scan(&total)
+	_ = db.QueryRow("SELECT COUNT(*) FROM games g "+where+" AND ((g.is_draw=0 AND g.winning_team_id=g.player_team_id))", args...).Scan(&wins)
+	_ = db.QueryRow("SELECT COUNT(*) FROM games g "+where+" AND ((g.is_draw=0 AND g.winning_team_id!=g.player_team_id))", args...).Scan(&losses)
+	_ = db.QueryRow("SELECT COUNT(*) FROM games g "+where+" AND g.is_draw=1", args...).Scan(&draws)
+	_ = db.QueryRow("SELECT COALESCE((julianday('now') - julianday(MAX(g.created))),0) FROM games g "+where, args...).Scan(&daysSinceLast)
+
+	winRate := 0
+	if total > 0 {
+		winRate = int(float64(wins) / float64(total) * 100)
+	}
+
+	resp := map[string]any{
+		"totalMatches":       total,
+		"wins":               wins,
+		"losses":             losses,
+		"draws":              draws,
+		"winRate":            winRate,
+		"daysSinceLastMatch": daysSinceLast,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// /api/opponent/{id}/matches
+func apiOpponentMatches(w http.ResponseWriter, r *http.Request, opponentId string) {
+	move := r.URL.Query().Get("move")
+	timeline := r.URL.Query().Get("timeline")
+
+	where := "WHERE g.game_type='duels' AND g.opponent_id=?"
+	args := []interface{}{opponentId}
+	if move != "" {
+		where += " AND g.movement=?"
+		args = append(args, move)
+	}
+	if timeline != "" {
+		where += " AND g.created >= datetime('now', ?)"
+		args = append(args, "-"+timeline+" days")
+	}
+
+	rows, err := db.Query(`
+			SELECT g.id, g.created, g.game_date, g.movement,
+				CASE
+					WHEN g.is_draw = 1 THEN 'draw'
+					WHEN g.winning_team_id IS NOT NULL AND g.player_team_id IS NOT NULL THEN
+						CASE WHEN g.winning_team_id = g.player_team_id THEN 'win' ELSE 'loss' END
+					ELSE 'unknown'
+				END as result,
+				COALESCE(SUM(r.player_score), 0) as yourScore,
+				COALESCE(SUM(r.opponent_score), 0) as opponentScore,
+				GROUP_CONCAT(DISTINCT r.actual_country_code) as countries
+			FROM games g
+			LEFT JOIN rounds r ON g.id = r.game_id
+			`+where+`
+			GROUP BY g.id, g.created, g.game_date, g.movement, g.is_draw, g.winning_team_id, g.player_team_id
+			ORDER BY COALESCE(g.game_date, g.created) DESC
+			LIMIT 100
+		`, args...)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var out []map[string]any
+	for rows.Next() {
+		var id, created, gameDate, movement, result, countries string
+		var yourScore, opponentScore float64
+		rows.Scan(&id, &created, &gameDate, &movement, &result, &yourScore, &opponentScore, &countries)
+		out = append(out, map[string]any{
+			"gameId":        id,
+			"created":       created,
+			"gameDate":      gameDate,
+			"movement":      movement,
+			"result":        result,
+			"yourScore":     yourScore,
+			"opponentScore": opponentScore,
+			"countries":     countries,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
+// /api/opponent/{id}/score-comparison
+func apiOpponentScoreComparison(w http.ResponseWriter, r *http.Request, opponentId string) {
+	move := r.URL.Query().Get("move")
+	timeline := r.URL.Query().Get("timeline")
+
+	where := "WHERE g.game_type='duels' AND g.opponent_id=?"
+	args := []interface{}{opponentId}
+	if move != "" {
+		where += " AND g.movement=?"
+		args = append(args, move)
+	}
+	if timeline != "" {
+		where += " AND g.created >= datetime('now', ?)"
+		args = append(args, "-"+timeline+" days")
+	}
+
+	// Your stats
+	var yourAvg, yourBest, yourWorst float64
+	_ = db.QueryRow("SELECT COALESCE(AVG(r.player_score),0), COALESCE(MAX(r.player_score),0), COALESCE(MIN(r.player_score),0) FROM rounds r JOIN games g ON g.id=r.game_id "+where, args...).Scan(&yourAvg, &yourBest, &yourWorst)
+	// Opponent stats
+	var oppAvg, oppBest, oppWorst float64
+	_ = db.QueryRow("SELECT COALESCE(AVG(r.opponent_score),0), COALESCE(MAX(r.opponent_score),0), COALESCE(MIN(r.opponent_score),0) FROM rounds r JOIN games g ON g.id=r.game_id "+where, args...).Scan(&oppAvg, &oppBest, &oppWorst)
+
+	resp := map[string]any{
+		"yourAvg":       int(yourAvg),
+		"yourBest":      int(yourBest),
+		"yourWorst":     int(yourWorst),
+		"opponentAvg":   int(oppAvg),
+		"opponentBest":  int(oppBest),
+		"opponentWorst": int(oppWorst),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// /api/opponent/{id}/countries
+func apiOpponentCountries(w http.ResponseWriter, r *http.Request, opponentId string) {
+	move := r.URL.Query().Get("move")
+	timeline := r.URL.Query().Get("timeline")
+
+	where := "WHERE g.game_type='duels' AND g.opponent_id=?"
+	args := []interface{}{opponentId}
+	if move != "" {
+		where += " AND g.movement=?"
+		args = append(args, move)
+	}
+	if timeline != "" {
+		where += " AND g.created >= datetime('now', ?)"
+		args = append(args, "-"+timeline+" days")
+	}
+
+	rows, err := db.Query(`
+			SELECT COALESCE(r.actual_country_code, r.country_code) as country, COUNT(*) as count
+			FROM rounds r JOIN games g ON g.id=r.game_id
+			`+where+`
+			GROUP BY country
+			ORDER BY count DESC
+			LIMIT 10
+		`, args...)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var out []map[string]any
+	for rows.Next() {
+		var countryCode string
+		var count int
+		rows.Scan(&countryCode, &count)
+		out = append(out, map[string]any{
+			"country": countryCoder.NameEnByCode(countryCode),
+			"count":   count,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
+// /api/opponent/{id}/performance
+func apiOpponentPerformance(w http.ResponseWriter, r *http.Request, opponentId string) {
+	move := r.URL.Query().Get("move")
+	timeline := r.URL.Query().Get("timeline")
+
+	where := "WHERE g.game_type='duels' AND g.opponent_id=?"
+	args := []interface{}{opponentId}
+	if move != "" {
+		where += " AND g.movement=?"
+		args = append(args, move)
+	}
+	if timeline != "" {
+		where += " AND g.created >= datetime('now', ?)"
+		args = append(args, "-"+timeline+" days")
+	}
+
+	rows, err := db.Query(`
+			SELECT COALESCE(g.game_date, g.created) as date,
+				SUM(r.player_score) as yourScore,
+				SUM(r.opponent_score) as opponentScore
+			FROM games g
+			LEFT JOIN rounds r ON g.id = r.game_id
+			`+where+`
+			GROUP BY g.id, date
+			ORDER BY date ASC
+			LIMIT 100
+		`, args...)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var out []map[string]any
+	for rows.Next() {
+		var date string
+		var yourScore, opponentScore float64
+		rows.Scan(&date, &yourScore, &opponentScore)
+		out = append(out, map[string]any{
+			"date":          date,
+			"yourScore":     yourScore,
+			"opponentScore": opponentScore,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 // ------------------------------------------------------------
@@ -2516,10 +2852,21 @@ func uiIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func uiStatsRow(w http.ResponseWriter, r *http.Request) {
-	data := struct {
-		Title string
-	}{
-		Title: "Stats Row - GeoStatsr",
+	style := r.URL.Query().Get("style")
+	if style == "" {
+		style = "geostatsr"
+	}
+	slant := r.URL.Query().Get("slant")
+	if slant == "" {
+		slant = "slant-left"
+	}
+	cards := r.URL.Query().Get("cards")
+
+	data := map[string]interface{}{
+		"Title": "Stats Row - GeoStatsr",
+		"Style": style,
+		"Slant": slant,
+		"Cards": cards,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -2977,7 +3324,7 @@ func collectUserProfile() error {
 	// Check if competitive rank has changed before inserting
 	var lastElo, lastRating, lastRatingChange, lastDivisionType, lastStartRating, lastEndRating int
 	var lastOnLeaderboard bool
-	err = db.QueryRow(`SELECT elo, rating, last_rating_change, division_type, division_start_rating, division_end_rating, on_leaderboard 
+	err = db.QueryRow(`SELECT elo, rating, last_rating_change, division_type, division_start_rating, division_end_rating, on_leaderboard
 		FROM competitive_rank ORDER BY recorded_at DESC LIMIT 1`).Scan(&lastElo, &lastRating, &lastRatingChange,
 		&lastDivisionType, &lastStartRating, &lastEndRating, &lastOnLeaderboard)
 
@@ -2986,7 +3333,7 @@ func collectUserProfile() error {
 		lastDivisionType != comp.Division.Type || lastStartRating != comp.Division.StartRating ||
 		lastEndRating != comp.Division.EndRating || lastOnLeaderboard != comp.OnLeaderboard {
 
-		_, err = db.Exec(`INSERT INTO competitive_rank (elo, rating, last_rating_change, division_type, division_start_rating, division_end_rating, on_leaderboard) 
+		_, err = db.Exec(`INSERT INTO competitive_rank (elo, rating, last_rating_change, division_type, division_start_rating, division_end_rating, on_leaderboard)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			comp.Elo, comp.Rating, comp.LastRatingChange, comp.Division.Type,
 			comp.Division.StartRating, comp.Division.EndRating, comp.OnLeaderboard)

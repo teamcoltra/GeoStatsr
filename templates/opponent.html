@@ -1,395 +1,537 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-bs-theme="dark">
-<head>
-    <meta charset='utf-8'>
-    <title>{{.OpponentNick}} - GeoStatsr</title>
-    <link href="/static/css/bootstrap.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        .navbar {
-            border: none;
-        }
-        .stat-card {
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .stat-number {
-            font-size: 2rem;
-            font-weight: bold;
-        }
-        .stat-label {
-            font-size: 0.9rem;
-        }
-        .movement-filter {
-            margin-bottom: 1.5rem;
-        }
-        .movement-filter .btn {
-            margin-right: 0.5rem;
-        }
-        .timeline-container {
-            margin-bottom: 1.5rem;
-        }
-        .opponent-map {
-            height: 400px;
-            width: 100%;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
-        .table-container {
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .matches-table {
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        .sticky-top {
-            background-color: var(--bs-body-secondary-bg);
-            z-index: 10;
-        }
-        [data-bs-theme="dark"] .sticky-top {
-            background-color: var(--bs-dark);
-        }
-        .match-row {
-            cursor: pointer;
-            transition: background-color 0.1s ease;
-        }
-        .match-row:hover {
-            background-color: var(--bs-primary) !important;
-            color: white !important;
-        }
-        .game-link {
-            text-decoration: none;
-            color: inherit;
-        }
-        .game-link:hover {
-            color: var(--bs-primary);
-        }
-        .chart-container {
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            height: 300px;
-        }
-        .win-badge {
-            font-weight: bold;
-        }
-        .win-badge.win {
-            color: #28a745;
-        }
-        .win-badge.loss {
-            color: #dc3545;
-        }
-        .win-badge.draw {
-            color: #ffc107;
-        }
-    </style>
-</head>
-<body class='bg-body text-body'>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg bg-primary mb-4" id="mainNavbar" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+        <title>{{.OpponentNick}} - GeoStatsr</title>
+        <link href="/static/css/bootstrap.css" rel="stylesheet" />
+        <link href="/static/css/custom.css" rel="stylesheet" />
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+            .navbar {
+                border: none;
+            }
+            .stat-card {
+                border-radius: 8px;
+                padding: 1rem;
+                margin-bottom: 1rem;
+            }
+            .stat-number {
+                font-size: 2rem;
+                font-weight: bold;
+            }
+            .stat-label {
+                font-size: 0.9rem;
+            }
+            .movement-filter {
+                margin-bottom: 1.5rem;
+            }
+            .movement-filter .btn {
+                margin-right: 0.5rem;
+            }
+            .timeline-container {
+                margin-bottom: 1.5rem;
+            }
+            .opponent-map {
+                height: 400px;
+                width: 100%;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+            }
+            .table-container {
+                border-radius: 8px;
+                padding: 1rem;
+                margin-bottom: 1rem;
+            }
+            .matches-table {
+                max-height: 500px;
+                overflow-y: auto;
+            }
+            .sticky-top {
+                background-color: var(--bs-body-secondary-bg);
+                z-index: 10;
+            }
+            [data-bs-theme="dark"] .sticky-top {
+                background-color: var(--bs-dark);
+            }
+            .match-row {
+                cursor: pointer;
+                transition: background-color 0.1s ease;
+            }
+            .match-row:hover {
+                background-color: var(--bs-primary) !important;
+                color: white !important;
+            }
+            .game-link {
+                text-decoration: none;
+                color: inherit;
+            }
+            .game-link:hover {
+                color: var(--bs-primary);
+            }
+            .chart-container {
+                border-radius: 8px;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                height: 300px;
+            }
+            .win-badge {
+                font-weight: bold;
+            }
+            .win-badge.win {
+                color: #28a745;
+            }
+            .win-badge.loss {
+                color: #dc3545;
+            }
+            .win-badge.draw {
+                color: #ffc107;
+            }
+        </style>
+    </head>
+    <body class="bg-body text-body">
+        <!-- Navigation -->
+        <nav
+            class="navbar navbar-expand-lg bg-primary mb-4"
+            id="mainNavbar"
+            data-bs-theme="light"
+        >
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1">
+                    <img
+                        src="/static/img/text-logo.svg"
+                        alt="Logo"
+                        height="40"
+                        class="d-inline-block align-text-top"
+                    />
+                </a>
+                <div class="d-flex align-items-center">
+                    <button
+                        id="themeToggle"
+                        class="btn btn-warning me-2"
+                        title="Toggle Dark/Light Mode"
+                    >
+                        <span id="themeIcon">🌙</span>
+                    </button>
+                    <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+                </div>
+            </div>
+        </nav>
+
         <div class="container-fluid">
-            <a href="/" class="navbar-brand mb-0 h1">
-                <img src="/static/img/text-logo.svg" alt="Logo" height="40" class="d-inline-block align-text-top">
-            </a>
-            <div class="d-flex align-items-center">
-                <button id="themeToggle" class="btn btn-warning me-2" title="Toggle Dark/Light Mode">
-                    <span id="themeIcon">🌙</span>
-                </button>
-                <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+            <!-- Page Header -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h1>⚔️ {{.OpponentNick}} Rivalry</h1>
+                    <p class="text-body-secondary">
+                        Head-to-head statistics and match history against
+                        {{.OpponentNick}}
+                    </p>
+                </div>
             </div>
-        </div>
-    </nav>
 
-    <div class="container-fluid">
-        <!-- Page Header -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <h1>⚔️ {{.OpponentNick}} Rivalry</h1>
-                <p class="text-body-secondary">Head-to-head statistics and match history against {{.OpponentNick}}</p>
-            </div>
-        </div>
+            <!-- Movement Mode Filter -->
+            <div class="movement-filter">
+                <div class="btn-group" role="group">
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="allModes"
+                        value=""
+                        checked
+                    />
+                    <label class="btn btn-primary" for="allModes">All</label>
 
-        <!-- Movement Mode Filter -->
-        <div class="movement-filter">
-            <label class="form-label">Movement Mode:</label>
-            <div class="btn-group" role="group">
-                <input type="radio" class="btn-check" name="movement" id="allModes" value="" checked>
-                <label class="btn btn-primary" for="allModes">All</label>
-                
-                <input type="radio" class="btn-check" name="movement" id="moving" value="Moving">
-                <label class="btn btn-success" for="moving">Moving</label>
-                
-                <input type="radio" class="btn-check" name="movement" id="noMove" value="NoMove">
-                <label class="btn btn-success" for="noMove">No Moving</label>
-                
-                <input type="radio" class="btn-check" name="movement" id="nmpz" value="NMPZ">
-                <label class="btn btn-success" for="nmpz">NMPZ</label>
-            </div>
-        </div>
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="moving"
+                        value="Moving"
+                    />
+                    <label class="btn btn-success" for="moving">Moving</label>
 
-        <!-- Timeline Filter -->
-        <div class="timeline-container">
-            <label class="form-label">Timeline:</label>
-            <div class="btn-group" role="group">
-                <input type="radio" class="btn-check" name="timeline" id="allTime" value="" checked>
-                <label class="btn btn-outline-primary" for="allTime">All Time</label>
-                
-                <input type="radio" class="btn-check" name="timeline" id="last7" value="7">
-                <label class="btn btn-outline-primary" for="last7">Last 7 Days</label>
-                
-                <input type="radio" class="btn-check" name="timeline" id="last30" value="30">
-                <label class="btn btn-outline-primary" for="last30">Last 30 Days</label>
-                
-                <input type="radio" class="btn-check" name="timeline" id="last90" value="90">
-                <label class="btn btn-outline-primary" for="last90">Last 90 Days</label>
-            </div>
-        </div>
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="noMove"
+                        value="NoMove"
+                    />
+                    <label class="btn btn-success" for="noMove"
+                        >No Moving</label
+                    >
 
-        <!-- Rivalry Stats Summary -->
-        <div class="row mb-4" id="statsRow">
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="totalMatches">-</div>
-                    <div class="stat-label text-body-secondary">Total Matches</div>
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="nmpz"
+                        value="NMPZ"
+                    />
+                    <label class="btn btn-success" for="nmpz">NMPZ</label>
                 </div>
             </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-success">
-                    <div class="stat-number text-white" id="wins">-</div>
-                    <div class="stat-label text-white">Wins</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-danger">
-                    <div class="stat-number text-white" id="losses">-</div>
-                    <div class="stat-label text-white">Losses</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-warning">
-                    <div class="stat-number text-white" id="draws">-</div>
-                    <div class="stat-label text-white">Draws</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="winRate">-</div>
-                    <div class="stat-label text-body-secondary">Win Rate</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="daysSinceLastMatch">-</div>
-                    <div class="stat-label text-body-secondary">Days Since Last</div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Performance Comparison Chart -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="chart-container bg-body-secondary">
-                    <h5 class="text-body">📊 Score Comparison</h5>
-                    <canvas id="scoreComparisonChart"></canvas>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="chart-container bg-body-secondary">
-                    <h5 class="text-body">🌍 Most Played Countries</h5>
-                    <canvas id="countriesChart"></canvas>
-                </div>
-            </div>
-        </div>
+            <!-- Timeline Filter -->
+            <div class="timeline-container">
+                <div class="btn-group" role="group">
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="allTime"
+                        value=""
+                        checked
+                    />
+                    <label class="btn btn-outline-primary" for="allTime"
+                        >All Time</label
+                    >
 
-        <!-- Match Performance Over Time -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="chart-container bg-body-secondary" style="height: 400px;">
-                    <h5 class="text-body">📈 Match Performance Over Time</h5>
-                    <canvas id="performanceChart"></canvas>
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="last7"
+                        value="7"
+                    />
+                    <label class="btn btn-outline-primary" for="last7"
+                        >Last 7 Days</label
+                    >
+
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="last30"
+                        value="30"
+                    />
+                    <label class="btn btn-outline-primary" for="last30"
+                        >Last 30 Days</label
+                    >
+
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="last90"
+                        value="90"
+                    />
+                    <label class="btn btn-outline-primary" for="last90"
+                        >Last 90 Days</label
+                    >
                 </div>
             </div>
-        </div>
 
-        <!-- Matches Table -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="table-container bg-body-secondary">
-                    <h5 class="text-body">⚔️ All Matches vs {{.OpponentNick}} (<span id="matchesCount">0</span>)</h5>
-                    <div class="matches-table">
-                        <table class="table table-sm table-striped" id="matchesTable">
-                            <thead class="sticky-top">
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Result</th>
-                                    <th>Your Score</th>
-                                    <th>Opponent Score</th>
-                                    <th>Margin</th>
-                                    <th>Countries</th>
-                                    <th>Movement</th>
-                                    <th>Game</th>
-                                </tr>
-                            </thead>
-                            <tbody id="matchesTableBody">
-                                <tr><td colspan="8" class="text-center">Loading...</td></tr>
-                            </tbody>
-                        </table>
+            <!-- Rivalry Stats Summary -->
+            <div class="row mb-4" id="statsRow">
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="totalMatches">
+                            -
+                        </div>
+                        <div class="stat-label text-body-secondary">
+                            Total Matches
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-success">
+                        <div class="stat-number text-white" id="wins">-</div>
+                        <div class="stat-label text-white">Wins</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-danger">
+                        <div class="stat-number text-white" id="losses">-</div>
+                        <div class="stat-label text-white">Losses</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-warning">
+                        <div class="stat-number text-white" id="draws">-</div>
+                        <div class="stat-label text-white">Draws</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="winRate">-</div>
+                        <div class="stat-label text-body-secondary">
+                            Win Rate
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div
+                            class="stat-number text-body"
+                            id="daysSinceLastMatch"
+                        >
+                            -
+                        </div>
+                        <div class="stat-label text-body-secondary">
+                            Days Since Last
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Comparison Chart -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">📊 Score Comparison</h5>
+                        <div class="chart-container">
+                            <canvas id="scoreComparisonChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">🌍 Most Played Countries</h5>
+                        <div class="chart-container">
+                            <canvas id="countriesChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Match Performance Over Time -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div
+                        class="table-container bg-body-secondary"
+                        style="height: 400px"
+                    >
+                        <h5 class="text-body">
+                            📈 Match Performance Over Time
+                        </h5>
+                        <div class="chart-container">
+                            <canvas id="performanceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Matches Table -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">
+                            ⚔️ All Matches vs {{.OpponentNick}} (<span
+                                id="matchesCount"
+                                >0</span
+                            >)
+                        </h5>
+                        <div class="matches-table">
+                            <table
+                                class="table table-sm table-striped"
+                                id="matchesTable"
+                            >
+                                <thead class="sticky-top">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Result</th>
+                                        <th>Your Score</th>
+                                        <th>Opponent Score</th>
+                                        <th>Margin</th>
+                                        <th>Countries</th>
+                                        <th>Movement</th>
+                                        <th>Game</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="matchesTableBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center">
+                                            Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <script>
-        // Global variables
-        let currentMovement = '';
-        let currentTimeline = '';
-        let opponentId = '{{.OpponentId}}';
-        let opponentNick = '{{.OpponentNick}}';
-        let isDarkMode = true;
-        let scoreComparisonChart = null;
-        let countriesChart = null;
-        let performanceChart = null;
+        <script>
+            // Global variables
+            let currentMovement = "";
+            let currentTimeline = "";
+            let opponentId = "{{.OpponentId}}";
+            let opponentNick = "{{.OpponentNick}}";
+            let isDarkMode = true;
+            let scoreComparisonChart = null;
+            let countriesChart = null;
+            let performanceChart = null;
 
-        // Parse URL hash for initial state
-        function parseUrlHash() {
-            const hash = window.location.hash;
-            if (hash) {
-                const params = new URLSearchParams(hash.substring(1));
-                if (params.get('movement')) {
-                    currentMovement = params.get('movement');
+            // Parse URL hash for initial state
+            function parseUrlHash() {
+                const hash = window.location.hash;
+                if (hash) {
+                    const params = new URLSearchParams(hash.substring(1));
+                    if (params.get("movement")) {
+                        currentMovement = params.get("movement");
+                    }
+                    if (params.get("timeline")) {
+                        currentTimeline = params.get("timeline");
+                    }
                 }
-                if (params.get('timeline')) {
-                    currentTimeline = params.get('timeline');
+            }
+
+            // Update URL hash when state changes
+            function updateUrlHash() {
+                const params = new URLSearchParams();
+                if (currentMovement) params.set("movement", currentMovement);
+                if (currentTimeline) params.set("timeline", currentTimeline);
+
+                const hash = params.toString();
+                window.location.hash = hash ? "#" + hash : "";
+            }
+
+            // Theme toggle functionality
+            function toggleTheme() {
+                const html = document.documentElement;
+                const themeButton = document.getElementById("themeToggle");
+                const themeIcon = document.getElementById("themeIcon");
+
+                if (isDarkMode) {
+                    // Switch to light mode
+                    html.setAttribute("data-bs-theme", "light");
+                    themeButton.className = "btn btn-dark me-2";
+                    themeIcon.textContent = "🌙";
+                    localStorage.setItem("theme", "light");
+                    isDarkMode = false;
+                } else {
+                    // Switch to dark mode
+                    html.setAttribute("data-bs-theme", "dark");
+                    themeButton.className = "btn btn-warning me-2";
+                    themeIcon.textContent = "☀️";
+                    localStorage.setItem("theme", "dark");
+                    isDarkMode = true;
+                }
+                updateChartColors();
+            }
+
+            function loadTheme() {
+                const savedTheme = localStorage.getItem("theme");
+                if (savedTheme === "light") {
+                    isDarkMode = true; // Set to true so toggle switches to light
+                    toggleTheme();
                 }
             }
-        }
 
-        // Update URL hash when state changes
-        function updateUrlHash() {
-            const params = new URLSearchParams();
-            if (currentMovement) params.set('movement', currentMovement);
-            if (currentTimeline) params.set('timeline', currentTimeline);
-            
-            const hash = params.toString();
-            window.location.hash = hash ? '#' + hash : '';
-        }
+            // Load summary statistics
+            async function loadSummaryStats() {
+                try {
+                    let url = `/api/opponent/${opponentId}/summary`;
+                    const params = new URLSearchParams();
+                    if (currentMovement) params.set("move", currentMovement);
+                    if (currentTimeline)
+                        params.set("timeline", currentTimeline);
+                    if (params.toString()) url += "?" + params.toString();
 
-        // Theme toggle functionality
-        function toggleTheme() {
-            const html = document.documentElement;
-            const themeButton = document.getElementById('themeToggle');
-            const themeIcon = document.getElementById('themeIcon');
-            
-            if (isDarkMode) {
-                // Switch to light mode
-                html.setAttribute('data-bs-theme', 'light');
-                themeButton.className = 'btn btn-dark me-2';
-                themeIcon.textContent = '🌙';
-                localStorage.setItem('theme', 'light');
-                isDarkMode = false;
-            } else {
-                // Switch to dark mode
-                html.setAttribute('data-bs-theme', 'dark');
-                themeButton.className = 'btn btn-warning me-2';
-                themeIcon.textContent = '☀️';
-                localStorage.setItem('theme', 'dark');
-                isDarkMode = true;
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    document.getElementById("totalMatches").textContent =
+                        data.totalMatches || 0;
+                    document.getElementById("wins").textContent =
+                        data.wins || 0;
+                    document.getElementById("losses").textContent =
+                        data.losses || 0;
+                    document.getElementById("draws").textContent =
+                        data.draws || 0;
+                    document.getElementById("winRate").textContent =
+                        data.winRate ? data.winRate + "%" : "-";
+                    document.getElementById("daysSinceLastMatch").textContent =
+                        data.daysSinceLastMatch || "-";
+                } catch (error) {
+                    console.error("Failed to load summary stats:", error);
+                }
             }
-            updateChartColors();
-        }
 
-        function loadTheme() {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme === 'light') {
-                isDarkMode = true; // Set to true so toggle switches to light
-                toggleTheme();
-            }
-        }
+            // Load matches data
+            async function loadMatchesData() {
+                try {
+                    let url = `/api/opponent/${opponentId}/matches`;
+                    const params = new URLSearchParams();
+                    if (currentMovement) params.set("move", currentMovement);
+                    if (currentTimeline)
+                        params.set("timeline", currentTimeline);
+                    if (params.toString()) url += "?" + params.toString();
 
-        // Load summary statistics
-        async function loadSummaryStats() {
-            try {
-                let url = `/api/opponent/${opponentId}/summary`;
-                const params = new URLSearchParams();
-                if (currentMovement) params.set('move', currentMovement);
-                if (currentTimeline) params.set('timeline', currentTimeline);
-                if (params.toString()) url += '?' + params.toString();
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                document.getElementById('totalMatches').textContent = data.totalMatches || 0;
-                document.getElementById('wins').textContent = data.wins || 0;
-                document.getElementById('losses').textContent = data.losses || 0;
-                document.getElementById('draws').textContent = data.draws || 0;
-                document.getElementById('winRate').textContent = data.winRate ? data.winRate + '%' : '-';
-                document.getElementById('daysSinceLastMatch').textContent = data.daysSinceLastMatch || '-';
-            } catch (error) {
-                console.error('Failed to load summary stats:', error);
-            }
-        }
+                    const response = await fetch(url);
+                    const data = await response.json();
 
-        // Load matches data
-        async function loadMatchesData() {
-            try {
-                let url = `/api/opponent/${opponentId}/matches`;
-                const params = new URLSearchParams();
-                if (currentMovement) params.set('move', currentMovement);
-                if (currentTimeline) params.set('timeline', currentTimeline);
-                if (params.toString()) url += '?' + params.toString();
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                const tableBody = document.getElementById('matchesTableBody');
-                const matchesCount = document.getElementById('matchesCount');
-                
-                tableBody.innerHTML = '';
-                matchesCount.textContent = data.length;
-                
-                if (data && data.length > 0) {
-                    data.forEach(match => {
-                        const row = tableBody.insertRow();
-                        row.className = 'match-row';
-                        
-                        const gameLink = `/#!gameType=duels&gameId=${match.gameId}`;
-                        const truncatedGameId = match.gameId.substring(0, 8) + '...';
-                        const matchDate = new Date(match.gameDate || match.created).toLocaleDateString();
-                        
-                        // Determine result and styling
-                        let resultText = '';
-                        let resultClass = '';
-                        if (match.result === 'win') {
-                            resultText = '🏆 Win';
-                            resultClass = 'win';
-                            row.className += ' table-success';
-                        } else if (match.result === 'loss') {
-                            resultText = '💔 Loss';
-                            resultClass = 'loss';
-                            row.className += ' table-danger';
-                        } else if (match.result === 'draw') {
-                            resultText = '🤝 Draw';
-                            resultClass = 'draw';
-                            row.className += ' table-warning';
-                        } else {
-                            resultText = '❓ Unknown';
-                            resultClass = '';
-                        }
-                        
-                        const margin = match.yourScore - match.opponentScore;
-                        const marginText = margin > 0 ? `+${Math.round(margin)}` : Math.round(margin);
-                        
-                        // Get unique countries from the match
-                        const countries = match.countries ? match.countries.split(',').map(c => c.trim()).filter((v, i, a) => a.indexOf(v) === i) : [];
-                        const countriesText = countries.length > 0 ? countries.slice(0, 3).join(', ') + (countries.length > 3 ? '...' : '') : '-';
-                        
-                        row.innerHTML = `
+                    const tableBody =
+                        document.getElementById("matchesTableBody");
+                    const matchesCount =
+                        document.getElementById("matchesCount");
+
+                    tableBody.innerHTML = "";
+                    matchesCount.textContent = data.length;
+
+                    if (data && data.length > 0) {
+                        data.forEach((match) => {
+                            const row = tableBody.insertRow();
+                            row.className = "match-row";
+
+                            const gameLink = `/#!gameType=duels&gameId=${match.gameId}`;
+                            const truncatedGameId =
+                                match.gameId.substring(0, 8) + "...";
+                            const matchDate = new Date(
+                                match.gameDate || match.created,
+                            ).toLocaleDateString();
+
+                            // Determine result and styling
+                            let resultText = "";
+                            let resultClass = "";
+                            if (match.result === "win") {
+                                resultText = "🏆 Win";
+                                resultClass = "win";
+                                row.className += " table-success";
+                            } else if (match.result === "loss") {
+                                resultText = "💔 Loss";
+                                resultClass = "loss";
+                                row.className += " table-danger";
+                            } else if (match.result === "draw") {
+                                resultText = "🤝 Draw";
+                                resultClass = "draw";
+                                row.className += " table-warning";
+                            } else {
+                                resultText = "❓ Unknown";
+                                resultClass = "";
+                            }
+
+                            const margin =
+                                match.yourScore - match.opponentScore;
+                            const marginText =
+                                margin > 0
+                                    ? `+${Math.round(margin)}`
+                                    : Math.round(margin);
+
+                            // Get unique countries from the match
+                            const countries = match.countries
+                                ? match.countries
+                                      .split(",")
+                                      .map((c) => c.trim())
+                                      .filter((v, i, a) => a.indexOf(v) === i)
+                                : [];
+                            const countriesText =
+                                countries.length > 0
+                                    ? countries.slice(0, 3).join(", ") +
+                                      (countries.length > 3 ? "..." : "")
+                                    : "-";
+
+                            row.innerHTML = `
                             <td>${matchDate}</td>
                             <td><span class="win-badge ${resultClass}">${resultText}</span></td>
                             <td>${Math.round(match.yourScore)}</td>
@@ -399,183 +541,78 @@
                             <td>${match.movement}</td>
                             <td><a href="${gameLink}" class="game-link">${truncatedGameId}</a></td>
                         `;
-                    });
-                } else {
-                    tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No matches found</td></tr>';
-                }
-            } catch (error) {
-                console.error('Failed to load matches data:', error);
-            }
-        }
-
-        // Load charts
-        async function loadCharts() {
-            await loadScoreComparisonChart();
-            await loadCountriesChart();
-            await loadPerformanceChart();
-        }
-
-        // Load score comparison chart
-        async function loadScoreComparisonChart() {
-            try {
-                let url = `/api/opponent/${opponentId}/score-comparison`;
-                const params = new URLSearchParams();
-                if (currentMovement) params.set('move', currentMovement);
-                if (currentTimeline) params.set('timeline', currentTimeline);
-                if (params.toString()) url += '?' + params.toString();
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                const ctx = document.getElementById('scoreComparisonChart').getContext('2d');
-                
-                if (scoreComparisonChart) {
-                    scoreComparisonChart.destroy();
-                }
-                
-                const colors = getChartColors();
-                
-                scoreComparisonChart = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: ['Average Score', 'Best Score', 'Worst Score'],
-                        datasets: [{
-                            label: 'You',
-                            data: [data.yourAvg, data.yourBest, data.yourWorst],
-                            backgroundColor: 'rgba(52, 152, 219, 0.7)',
-                            borderColor: 'rgba(52, 152, 219, 1)',
-                            borderWidth: 1
-                        }, {
-                            label: opponentNick,
-                            data: [data.opponentAvg, data.opponentBest, data.opponentWorst],
-                            backgroundColor: 'rgba(231, 76, 60, 0.7)',
-                            borderColor: 'rgba(231, 76, 60, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                max: 5000,
-                                ticks: { color: colors.text },
-                                grid: { color: colors.grid }
-                            },
-                            x: {
-                                ticks: { color: colors.text },
-                                grid: { color: colors.grid }
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                labels: { color: colors.text }
-                            }
-                        }
+                        });
+                    } else {
+                        tableBody.innerHTML =
+                            '<tr><td colspan="8" class="text-center">No matches found</td></tr>';
                     }
-                });
-            } catch (error) {
-                console.error('Failed to load score comparison chart:', error);
+                } catch (error) {
+                    console.error("Failed to load matches data:", error);
+                }
             }
-        }
 
-        // Load countries chart
-        async function loadCountriesChart() {
-            try {
-                let url = `/api/opponent/${opponentId}/countries`;
-                const params = new URLSearchParams();
-                if (currentMovement) params.set('move', currentMovement);
-                if (currentTimeline) params.set('timeline', currentTimeline);
-                if (params.toString()) url += '?' + params.toString();
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                const ctx = document.getElementById('countriesChart').getContext('2d');
-                
-                if (countriesChart) {
-                    countriesChart.destroy();
-                }
-                
-                const colors = getChartColors();
-                
-                if (data && data.length > 0) {
-                    countriesChart = new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            labels: data.map(d => d.country),
-                            datasets: [{
-                                data: data.map(d => d.count),
-                                backgroundColor: [
-                                    'rgba(255, 99, 132, 0.8)',
-                                    'rgba(54, 162, 235, 0.8)',
-                                    'rgba(255, 205, 86, 0.8)',
-                                    'rgba(75, 192, 192, 0.8)',
-                                    'rgba(153, 102, 255, 0.8)',
-                                    'rgba(255, 159, 64, 0.8)',
-                                    'rgba(199, 199, 199, 0.8)',
-                                    'rgba(83, 102, 255, 0.8)'
-                                ],
-                                borderWidth: 2,
-                                borderColor: colors.text
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    position: 'bottom',
-                                    labels: { color: colors.text, font: { size: 10 } }
-                                }
-                            }
-                        }
-                    });
-                }
-            } catch (error) {
-                console.error('Failed to load countries chart:', error);
+            // Load charts
+            async function loadCharts() {
+                await loadScoreComparisonChart();
+                await loadCountriesChart();
+                await loadPerformanceChart();
             }
-        }
 
-        // Load performance over time chart
-        async function loadPerformanceChart() {
-            try {
-                let url = `/api/opponent/${opponentId}/performance`;
-                const params = new URLSearchParams();
-                if (currentMovement) params.set('move', currentMovement);
-                if (currentTimeline) params.set('timeline', currentTimeline);
-                if (params.toString()) url += '?' + params.toString();
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                const ctx = document.getElementById('performanceChart').getContext('2d');
-                
-                if (performanceChart) {
-                    performanceChart.destroy();
-                }
-                
-                const colors = getChartColors();
-                
-                if (data && data.length > 0) {
-                    performanceChart = new Chart(ctx, {
-                        type: 'line',
+            // Load score comparison chart
+            async function loadScoreComparisonChart() {
+                try {
+                    let url = `/api/opponent/${opponentId}/score-comparison`;
+                    const params = new URLSearchParams();
+                    if (currentMovement) params.set("move", currentMovement);
+                    if (currentTimeline)
+                        params.set("timeline", currentTimeline);
+                    if (params.toString()) url += "?" + params.toString();
+
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    const ctx = document
+                        .getElementById("scoreComparisonChart")
+                        .getContext("2d");
+
+                    if (scoreComparisonChart) {
+                        scoreComparisonChart.destroy();
+                    }
+
+                    const colors = getChartColors();
+
+                    scoreComparisonChart = new Chart(ctx, {
+                        type: "bar",
                         data: {
-                            labels: data.map(d => new Date(d.date).toLocaleDateString()),
-                            datasets: [{
-                                label: 'Your Score',
-                                data: data.map(d => d.yourScore),
-                                borderColor: 'rgba(52, 152, 219, 1)',
-                                backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                                tension: 0.1
-                            }, {
-                                label: `${opponentNick}'s Score`,
-                                data: data.map(d => d.opponentScore),
-                                borderColor: 'rgba(231, 76, 60, 1)',
-                                backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                                tension: 0.1
-                            }]
+                            labels: [
+                                "Average Score",
+                                "Best Score",
+                                "Worst Score",
+                            ],
+                            datasets: [
+                                {
+                                    label: "You",
+                                    data: [
+                                        data.yourAvg,
+                                        data.yourBest,
+                                        data.yourWorst,
+                                    ],
+                                    backgroundColor: "rgba(52, 152, 219, 0.7)",
+                                    borderColor: "rgba(52, 152, 219, 1)",
+                                    borderWidth: 1,
+                                },
+                                {
+                                    label: opponentNick,
+                                    data: [
+                                        data.opponentAvg,
+                                        data.opponentBest,
+                                        data.opponentWorst,
+                                    ],
+                                    backgroundColor: "rgba(231, 76, 60, 0.7)",
+                                    borderColor: "rgba(231, 76, 60, 1)",
+                                    borderWidth: 1,
+                                },
+                            ],
                         },
                         options: {
                             responsive: true,
@@ -583,110 +620,277 @@
                             scales: {
                                 y: {
                                     beginAtZero: true,
-                                    max: 25000,
+                                    max: 5000,
                                     ticks: { color: colors.text },
-                                    grid: { color: colors.grid }
+                                    grid: { color: colors.grid },
                                 },
                                 x: {
                                     ticks: { color: colors.text },
-                                    grid: { color: colors.grid }
-                                }
+                                    grid: { color: colors.grid },
+                                },
                             },
                             plugins: {
                                 legend: {
-                                    labels: { color: colors.text }
-                                }
+                                    labels: { color: colors.text },
+                                },
+                            },
+                        },
+                    });
+                } catch (error) {
+                    console.error(
+                        "Failed to load score comparison chart:",
+                        error,
+                    );
+                }
+            }
+
+            // Load countries chart
+            async function loadCountriesChart() {
+                try {
+                    let url = `/api/opponent/${opponentId}/countries`;
+                    const params = new URLSearchParams();
+                    if (currentMovement) params.set("move", currentMovement);
+                    if (currentTimeline)
+                        params.set("timeline", currentTimeline);
+                    if (params.toString()) url += "?" + params.toString();
+
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    const ctx = document
+                        .getElementById("countriesChart")
+                        .getContext("2d");
+
+                    if (countriesChart) {
+                        countriesChart.destroy();
+                    }
+
+                    const colors = getChartColors();
+
+                    if (data && data.length > 0) {
+                        countriesChart = new Chart(ctx, {
+                            type: "doughnut",
+                            data: {
+                                labels: data.map((d) => d.country),
+                                datasets: [
+                                    {
+                                        data: data.map((d) => d.count),
+                                        backgroundColor: [
+                                            "rgba(255, 99, 132, 0.8)",
+                                            "rgba(54, 162, 235, 0.8)",
+                                            "rgba(255, 205, 86, 0.8)",
+                                            "rgba(75, 192, 192, 0.8)",
+                                            "rgba(153, 102, 255, 0.8)",
+                                            "rgba(255, 159, 64, 0.8)",
+                                            "rgba(199, 199, 199, 0.8)",
+                                            "rgba(83, 102, 255, 0.8)",
+                                        ],
+                                        borderWidth: 2,
+                                        borderColor: colors.text,
+                                    },
+                                ],
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: {
+                                        position: "bottom",
+                                        labels: {
+                                            color: colors.text,
+                                            font: { size: 10 },
+                                        },
+                                    },
+                                },
+                            },
+                        });
+                    }
+                } catch (error) {
+                    console.error("Failed to load countries chart:", error);
+                }
+            }
+
+            // Load performance over time chart
+            async function loadPerformanceChart() {
+                try {
+                    let url = `/api/opponent/${opponentId}/performance`;
+                    const params = new URLSearchParams();
+                    if (currentMovement) params.set("move", currentMovement);
+                    if (currentTimeline)
+                        params.set("timeline", currentTimeline);
+                    if (params.toString()) url += "?" + params.toString();
+
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    const ctx = document
+                        .getElementById("performanceChart")
+                        .getContext("2d");
+
+                    if (performanceChart) {
+                        performanceChart.destroy();
+                    }
+
+                    const colors = getChartColors();
+
+                    if (data && data.length > 0) {
+                        performanceChart = new Chart(ctx, {
+                            type: "line",
+                            data: {
+                                labels: data.map((d) =>
+                                    new Date(d.date).toLocaleDateString(),
+                                ),
+                                datasets: [
+                                    {
+                                        label: "Your Score",
+                                        data: data.map((d) => d.yourScore),
+                                        borderColor: "rgba(52, 152, 219, 1)",
+                                        backgroundColor:
+                                            "rgba(52, 152, 219, 0.1)",
+                                        tension: 0.1,
+                                    },
+                                    {
+                                        label: `${opponentNick}'s Score`,
+                                        data: data.map((d) => d.opponentScore),
+                                        borderColor: "rgba(231, 76, 60, 1)",
+                                        backgroundColor:
+                                            "rgba(231, 76, 60, 0.1)",
+                                        tension: 0.1,
+                                    },
+                                ],
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        max: 25000,
+                                        ticks: { color: colors.text },
+                                        grid: { color: colors.grid },
+                                    },
+                                    x: {
+                                        ticks: { color: colors.text },
+                                        grid: { color: colors.grid },
+                                    },
+                                },
+                                plugins: {
+                                    legend: {
+                                        labels: { color: colors.text },
+                                    },
+                                },
+                            },
+                        });
+                    }
+                } catch (error) {
+                    console.error("Failed to load performance chart:", error);
+                }
+            }
+
+            // Get chart colors based on current theme
+            function getChartColors() {
+                const textColor = isDarkMode ? "white" : "#212529";
+                const gridColor = isDarkMode
+                    ? "rgba(255,255,255,0.1)"
+                    : "rgba(0,0,0,0.1)";
+
+                return {
+                    text: textColor,
+                    grid: gridColor,
+                };
+            }
+
+            // Update chart colors based on current theme
+            function updateChartColors() {
+                const colors = getChartColors();
+
+                [
+                    scoreComparisonChart,
+                    countriesChart,
+                    performanceChart,
+                ].forEach((chart) => {
+                    if (chart) {
+                        if (chart.options.scales) {
+                            if (chart.options.scales.x) {
+                                chart.options.scales.x.ticks.color =
+                                    colors.text;
+                                chart.options.scales.x.grid.color = colors.grid;
+                            }
+                            if (chart.options.scales.y) {
+                                chart.options.scales.y.ticks.color =
+                                    colors.text;
+                                chart.options.scales.y.grid.color = colors.grid;
                             }
                         }
+                        if (
+                            chart.options.plugins &&
+                            chart.options.plugins.legend
+                        ) {
+                            chart.options.plugins.legend.labels.color =
+                                colors.text;
+                        }
+                        chart.update();
+                    }
+                });
+            }
+
+            // Load all data
+            function loadAllData() {
+                loadSummaryStats();
+                loadMatchesData();
+                loadCharts();
+            }
+
+            // Event listeners
+            document.addEventListener("DOMContentLoaded", function () {
+                // Load theme
+                loadTheme();
+
+                // Parse initial URL hash
+                parseUrlHash();
+
+                // Set initial UI state
+                if (currentMovement) {
+                    document.querySelector(
+                        `input[name="movement"][value="${currentMovement}"]`,
+                    ).checked = true;
+                }
+                if (currentTimeline) {
+                    document.querySelector(
+                        `input[name="timeline"][value="${currentTimeline}"]`,
+                    ).checked = true;
+                }
+
+                // Theme toggle
+                document
+                    .getElementById("themeToggle")
+                    .addEventListener("click", toggleTheme);
+
+                // Movement filter
+                document
+                    .querySelectorAll('input[name="movement"]')
+                    .forEach((radio) => {
+                        radio.addEventListener("change", (e) => {
+                            currentMovement = e.target.value;
+                            updateUrlHash();
+                            loadAllData();
+                        });
                     });
-                }
-            } catch (error) {
-                console.error('Failed to load performance chart:', error);
-            }
-        }
 
-        // Get chart colors based on current theme
-        function getChartColors() {
-            const textColor = isDarkMode ? 'white' : '#212529';
-            const gridColor = isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-            
-            return {
-                text: textColor,
-                grid: gridColor
-            };
-        }
+                // Timeline filter
+                document
+                    .querySelectorAll('input[name="timeline"]')
+                    .forEach((radio) => {
+                        radio.addEventListener("change", (e) => {
+                            currentTimeline = e.target.value;
+                            updateUrlHash();
+                            loadAllData();
+                        });
+                    });
 
-        // Update chart colors based on current theme
-        function updateChartColors() {
-            const colors = getChartColors();
-            
-            [scoreComparisonChart, countriesChart, performanceChart].forEach(chart => {
-                if (chart) {
-                    if (chart.options.scales) {
-                        if (chart.options.scales.x) {
-                            chart.options.scales.x.ticks.color = colors.text;
-                            chart.options.scales.x.grid.color = colors.grid;
-                        }
-                        if (chart.options.scales.y) {
-                            chart.options.scales.y.ticks.color = colors.text;
-                            chart.options.scales.y.grid.color = colors.grid;
-                        }
-                    }
-                    if (chart.options.plugins && chart.options.plugins.legend) {
-                        chart.options.plugins.legend.labels.color = colors.text;
-                    }
-                    chart.update();
-                }
+                // Load initial data
+                loadAllData();
             });
-        }
-
-        // Load all data
-        function loadAllData() {
-            loadSummaryStats();
-            loadMatchesData();
-            loadCharts();
-        }
-
-        // Event listeners
-        document.addEventListener('DOMContentLoaded', function() {
-            // Load theme
-            loadTheme();
-            
-            // Parse initial URL hash
-            parseUrlHash();
-            
-            // Set initial UI state
-            if (currentMovement) {
-                document.querySelector(`input[name="movement"][value="${currentMovement}"]`).checked = true;
-            }
-            if (currentTimeline) {
-                document.querySelector(`input[name="timeline"][value="${currentTimeline}"]`).checked = true;
-            }
-            
-            // Theme toggle
-            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
-            
-            // Movement filter
-            document.querySelectorAll('input[name="movement"]').forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    currentMovement = e.target.value;
-                    updateUrlHash();
-                    loadAllData();
-                });
-            });
-            
-            // Timeline filter
-            document.querySelectorAll('input[name="timeline"]').forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    currentTimeline = e.target.value;
-                    updateUrlHash();
-                    loadAllData();
-                });
-            });
-            
-            // Load initial data
-            loadAllData();
-        });
-    </script>
-</body>
+        </script>
+    </body>
 </html>

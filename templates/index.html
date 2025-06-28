@@ -1,1171 +1,1470 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-bs-theme="dark">
-<head>
-    <meta charset='utf-8'>
-    <title>{{.Title}}</title>
-    <link href="/static/css/bootstrap.css" rel="stylesheet">
-    <script src="//cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="//unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="//unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-		.navbar {
-			border: none;
-		}
-        .stat-card {
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .stat-number {
-            font-size: 2rem;
-            font-weight: bold;
-        }
-        .stat-label {
-            font-size: 0.9rem;
-        }
-        .movement-filter {
-            margin-bottom: 1.5rem;
-        }
-        .movement-filter .btn {
-            margin-right: 0.5rem;
-        }
-        .chart-container {
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            height: 400px;
-        }
-        .table-container {
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .country-table {
-            height: 300px;
-            overflow-y: auto;
-        }
-        .sticky-top {
-            background-color: var(--bs-body-secondary-bg);
-            z-index: 10;
-        }
-        [data-bs-theme="dark"] .sticky-top {
-            background-color: var(--bs-dark);
-        }
-        .game-item {
-            cursor: pointer;
-        }
-        .game-round-row {
-            cursor: pointer;
-            transition: border-bottom 0.2s ease, background-color 0.1s ease;
-        }
-        .game-round-row:hover {
-            border-right: 4px solid #000 !important;
-			border-bottom: 3px solid #000 !important;
-        }
-		.chart-container {
-			position: relative;
-			width: 100%;
-			max-width: 100%;
-			overflow-x: auto;
-			padding: 10px 0;
-		}
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-		canvas {
-			display: block;
-			width: 100% !important;
-			height: auto !important;
-		}
-    </style>
-</head>
-<body class='bg-body text-body'>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg bg-primary mb-4" id="mainNavbar" data-bs-theme="light">
+        <title>{{.Title}}</title>
+        <link href="/static/css/bootstrap.css" rel="stylesheet" />
+        <link href="/static/css/custom.css" rel="stylesheet" />
+        <script src="//cdn.jsdelivr.net/npm/chart.js"></script>
+        <link
+            rel="stylesheet"
+            href="//unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        />
+        <script src="//unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    </head>
+    <body class="bg-body text-body">
+        <!-- Navigation -->
+        <nav
+            class="navbar navbar-expand-lg bg-primary mb-4"
+            id="mainNavbar"
+            data-bs-theme="light"
+        >
+            <div class="container-fluid">
+                <span class="navbar-brand mb-0 h1"
+                    ><img
+                        src="/static/img/text-logo.svg"
+                        alt="Logo"
+                        height="40"
+                        class="d-inline-block align-text-top"
+                /></span>
+                <div class="d-flex align-items-center">
+                    <button
+                        id="themeToggle"
+                        class="btn btn-warning me-2"
+                        title="Toggle Dark/Light Mode"
+                    >
+                        <span id="themeIcon">🌙</span>
+                    </button>
+                    {{if not .IsPublic}}
+                    <button id="collectBtn" class="btn btn-info me-2">
+                        Collect Data Now
+                    </button>
+                    {{end}}
+                </div>
+            </div>
+        </nav>
+
+        <!-- Collection Results Alert -->
+        <div id="collectionAlert" class="container-fluid" style="display: none">
+            <div class="alert alert-dismissible alert-success">
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="alert"
+                ></button>
+                <h4 class="alert-heading">📊 Data Collection Complete!</h4>
+                <p class="mb-0" id="collectionAlertMessage">
+                    Collection results will appear here.
+                </p>
+            </div>
+        </div>
+
         <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1"><img src="/static/img/text-logo.svg" alt="Logo"  height="40" class="d-inline-block align-text-top"></span>
-            <div class="d-flex align-items-center">
-                <button id="themeToggle" class="btn btn-warning me-2" title="Toggle Dark/Light Mode">
-                    <span id="themeIcon">🌙</span>
-                </button>
-                {{if not .IsPublic}}
-                <button id="collectBtn" class="btn btn-info me-2">Collect Data Now</button>
-                {{end}}
-            </div>
-        </div>
-    </nav>
+            <!-- Game Type Tabs -->
+            <ul class="nav nav-tabs mb-4" id="gameTypeTabs">
+                <li class="nav-item">
+                    <a class="nav-link active" data-target="standard" href="#"
+                        >🎯 Singleplayer</a
+                    >
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-target="duels" href="#"
+                        >⚔️ Duels</a
+                    >
+                </li>
+            </ul>
 
-    <!-- Collection Results Alert -->
-    <div id="collectionAlert" class="container-fluid" style="display: none;">
-        <div class="alert alert-dismissible alert-success">
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            <h4 class="alert-heading">📊 Data Collection Complete!</h4>
-            <p class="mb-0" id="collectionAlertMessage">Collection results will appear here.</p>
-        </div>
-    </div>
+            <!-- Movement Mode Filter -->
+            <div class="movement-filter">
+                <div class="btn-group" role="group">
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="allModes"
+                        value=""
+                        checked
+                    />
+                    <label class="btn btn-primary" for="allModes">All</label>
 
-    <div class="container-fluid">
-        <!-- Game Type Tabs -->
-        <ul class="nav nav-tabs mb-4" id="gameTypeTabs">
-            <li class="nav-item">
-                <a class="nav-link active" data-target="standard" href="#">🎯 Singleplayer</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" data-target="duels" href="#">⚔️ Duels</a>
-            </li>
-        </ul>
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="moving"
+                        value="Moving"
+                    />
+                    <label class="btn btn-success" for="moving">Moving</label>
 
-        <!-- Movement Mode Filter -->
-        <div class="movement-filter">
-            <label class="form-label">Movement Mode:</label>
-            <div class="btn-group" role="group">
-                <input type="radio" class="btn-check" name="movement" id="allModes" value="" checked>
-                <label class="btn btn-primary" for="allModes">All</label>
-                
-                <input type="radio" class="btn-check" name="movement" id="moving" value="Moving">
-                <label class="btn btn-success" for="moving">Moving</label>
-                
-                <input type="radio" class="btn-check" name="movement" id="noMove" value="NoMove">
-                <label class="btn btn-success" for="noMove">No Moving</label>
-                
-                <input type="radio" class="btn-check" name="movement" id="nmpz" value="NMPZ">
-                <label class="btn btn-success" for="nmpz">NMPZ</label>
-            </div>
-        </div>
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="noMove"
+                        value="NoMove"
+                    />
+                    <label class="btn btn-success" for="noMove"
+                        >No Moving</label
+                    >
 
-        <!-- Stats Summary -->
-        <div class="row mb-4" id="statsRow">
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="totalGames">-</div>
-                    <div class="stat-label text-body-secondary">Total Games</div>
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="movement"
+                        id="nmpz"
+                        value="NMPZ"
+                    />
+                    <label class="btn btn-success" for="nmpz">NMPZ</label>
                 </div>
             </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="totalRounds">-</div>
-                    <div class="stat-label text-body-secondary">Total Rounds</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="avgScore">-</div>
-                    <div class="stat-label text-body-secondary">Avg Score</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="avgDistance">-</div>
-                    <div class="stat-label text-body-secondary">Avg Distance (km)</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="favCountry">-</div>
-                    <div class="stat-label text-body-secondary">Most Frequent</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="stat-card text-center bg-body-secondary">
-                    <div class="stat-number text-body" id="bestCountry">-</div>
-                    <div class="stat-label text-body-secondary">Best Country</div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Country Stats Tables -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="table-container bg-body-secondary">
-                    <h5 class="text-body">📉 Points Lost by Country</h5>
-                    <div class="country-table">
-                        <table class="table table-sm table-hover" id="pointsTable">
-                            <thead class="sticky-top">
-                                <tr>
-                                    <th style="cursor: pointer;" onclick="sortTable('pointsLostTable', 0)">Country ↕️</th>
-                                    <th style="cursor: pointer;" onclick="sortTable('pointsLostTable', 1)">Avg Points Lost ↕️</th>
-                                    <th style="cursor: pointer;" onclick="sortTable('pointsLostTable', 2)">Games ↕️</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pointsLostTable">
-                                <tr><td colspan="3" class="text-center">Loading...</td></tr>
-                            </tbody>
-                        </table>
+            <!-- Timeline Filter -->
+            <div class="timeline-container mb-3">
+                <div class="btn-group" role="group">
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="allTime"
+                        value=""
+                        checked
+                    />
+                    <label class="btn btn-outline-primary" for="allTime"
+                        >All Time</label
+                    >
+
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="last7"
+                        value="7"
+                    />
+                    <label class="btn btn-outline-primary" for="last7"
+                        >Last 7 Days</label
+                    >
+
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="last30"
+                        value="30"
+                    />
+                    <label class="btn btn-outline-primary" for="last30"
+                        >Last 30 Days</label
+                    >
+
+                    <input
+                        type="radio"
+                        class="btn-check"
+                        name="timeline"
+                        id="last90"
+                        value="90"
+                    />
+                    <label class="btn btn-outline-primary" for="last90"
+                        >Last 90 Days</label
+                    >
+                </div>
+            </div>
+
+            <!-- Stats Summary -->
+            <div class="row mb-4" id="statsRow">
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="totalGames">
+                            -
+                        </div>
+                        <div class="stat-label text-body-secondary">
+                            Total Games
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="totalRounds">
+                            -
+                        </div>
+                        <div class="stat-label text-body-secondary">
+                            Total Rounds
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="avgScore">-</div>
+                        <div class="stat-label text-body-secondary">
+                            Avg Score
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="avgDistance">
+                            -
+                        </div>
+                        <div class="stat-label text-body-secondary">
+                            Avg Distance (km)
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="favCountry">
+                            -
+                        </div>
+                        <div class="stat-label text-body-secondary">
+                            Most Frequent
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card text-center bg-body-secondary">
+                        <div class="stat-number text-body" id="bestCountry">
+                            -
+                        </div>
+                        <div class="stat-label text-body-secondary">
+                            Best Country
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="table-container bg-body-secondary">
-                    <h5 class="text-body">📍 Distance by Country</h5>
-                    <div class="country-table">
-                        <table class="table table-sm table-hover" id="distanceTableContainer">
-                            <thead class="sticky-top">
-                                <tr>
-                                    <th style="cursor: pointer;" onclick="sortTable('distanceTable', 0)">Country ↕️</th>
-                                    <th style="cursor: pointer;" onclick="sortTable('distanceTable', 1)">Avg Distance (km) ↕️</th>
-                                    <th style="cursor: pointer;" onclick="sortTable('distanceTable', 2)">Games ↕️</th>
-                                </tr>
-                            </thead>
-                            <tbody id="distanceTable">
-                                <tr><td colspan="3" class="text-center">Loading...</td></tr>
-                            </tbody>
-                        </table>
+
+            <!-- Country Stats Tables -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">📉 Points Lost by Country</h5>
+                        <div class="country-table">
+                            <table
+                                class="table table-sm table-hover"
+                                id="pointsTable"
+                            >
+                                <thead class="sticky-top">
+                                    <tr>
+                                        <th
+                                            style="cursor: pointer"
+                                            onclick="sortTable('pointsLostTable', 0)"
+                                        >
+                                            Country ↕️
+                                        </th>
+                                        <th
+                                            style="cursor: pointer"
+                                            onclick="sortTable('pointsLostTable', 1)"
+                                        >
+                                            Avg Points Lost ↕️
+                                        </th>
+                                        <th
+                                            style="cursor: pointer"
+                                            onclick="sortTable('pointsLostTable', 2)"
+                                        >
+                                            Games ↕️
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pointsLostTable">
+                                    <tr>
+                                        <td colspan="3" class="text-center">
+                                            Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">📍 Distance by Country</h5>
+                        <div class="country-table">
+                            <table
+                                class="table table-sm table-hover"
+                                id="distanceTableContainer"
+                            >
+                                <thead class="sticky-top">
+                                    <tr>
+                                        <th
+                                            style="cursor: pointer"
+                                            onclick="sortTable('distanceTable', 0)"
+                                        >
+                                            Country ↕️
+                                        </th>
+                                        <th
+                                            style="cursor: pointer"
+                                            onclick="sortTable('distanceTable', 1)"
+                                        >
+                                            Avg Distance (km) ↕️
+                                        </th>
+                                        <th
+                                            style="cursor: pointer"
+                                            onclick="sortTable('distanceTable', 2)"
+                                        >
+                                            Games ↕️
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="distanceTable">
+                                    <tr>
+                                        <td colspan="3" class="text-center">
+                                            Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Charts -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="chart-container bg-body-secondary">
-                    <h5 class="text-body">📊 Most Frequent Countries</h5>
-					<div class="chart-container">
-                    	<canvas id="countriesChart"></canvas>
-					</div>
+            <!-- Charts -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">📊 Most Frequent Countries</h5>
+                        <div class="chart-container">
+                            <canvas id="countriesChart"></canvas>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="col-md-6">
-                <div class="chart-container bg-body-secondary">
-                    <h5 class="text-body">🗺️ Country Performance Map</h5>
-                    <div id="worldMap" style="height: 350px; border-radius: 4px; display: flex; align-items: center; justify-content: center;" class="bg-body-tertiary text-body-secondary">
-                        World map will appear here
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">🗺️ Country Performance Map</h5>
+                        <div
+                            id="worldMap"
+                            style="
+                                height: 350px;
+                                border-radius: 4px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                            "
+                            class="bg-body-tertiary text-body-secondary"
+                        >
+                            World map will appear here
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Confused Countries Chart -->
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="chart-container bg-body-secondary">
-                    <h5 class="text-body">🤔 Most Commonly Confused Countries</h5>
-                    <p class="text-body-secondary small">Shows country pairs where you guessed one but the location was actually in another</p>
-                    <div class="chart-container">
-						<canvas id="confusedCountriesChart"></canvas>
-					</div>
+            <!-- Confused Countries Chart -->
+            <div class="row mb-4">
+                <div class="col-md-12">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">
+                            🤔 Most Commonly Confused Countries
+                        </h5>
+                        <p class="text-body-secondary small">
+                            Shows country pairs where you guessed one but the
+                            location was actually in another
+                        </p>
+                        <div class="chart-container">
+                            <canvas id="confusedCountriesChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Weekly Performance Chart -->
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="chart-container bg-body-secondary">
-                    <h5 class="text-body">📈 Weekly Performance Trend</h5>
-                    <p class="text-body-secondary small">Shows your average score and distance over the last 12 weeks</p>
-                    <div class="chart-container">
-						<canvas id="weeklyPerformanceChart"></canvas>
-					</div>
+            <!-- Weekly Performance Chart -->
+            <div class="row mb-4">
+                <div class="col-md-12">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">📈 Weekly Performance Trend</h5>
+                        <p class="text-body-secondary small">
+                            Shows your average score and distance over the last
+                            12 weeks
+                        </p>
+                        <div class="chart-container">
+                            <canvas id="weeklyPerformanceChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Recent Games -->
-        <div class="row">
-            <div class="col-md-6">
-                <div class="table-container bg-body-secondary">
-                    <h5 class="text-body">🎮 Recent Games</h5>
-                    <div style="max-height: 400px; overflow-y: auto;">
-                        <div id="gamesList" class="list-group">
-                            <div class="list-group-item text-center">
-                                Loading games...
+            <!-- Recent Games -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <h5 class="text-body">🎮 Recent Games</h5>
+                        <div style="max-height: 400px; overflow-y: auto">
+                            <div id="gamesList" class="list-group">
+                                <div class="list-group-item text-center">
+                                    Loading games...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="table-container bg-body-secondary">
+                        <div id="gameDetail">
+                            <div class="text-center text-body-secondary">
+                                Select a game to view details
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="table-container bg-body-secondary">
-                    <div id="gameDetail">
-                        <div class="text-center text-body-secondary">
-                            Select a game to view details
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
-    </div>
 
-    <script>
-        // Global variables
-        let currentGameType = 'standard';
-        let currentMovement = '';
-        let countriesChart = null;
-        let confusedCountriesChart = null;
-        let weeklyPerformanceChart = null;
-        let worldMap = null;
-        let isDarkMode = true; // Default to dark mode
-        
-        // Game map variables for highlighting
-        let currentGameMap = null;
-        let gameMapMarkers = [];
-        let originalGameMapView = null;
+        <script>
+            // Global variables
+            let currentGameType = "standard";
+            let currentMovement = "";
+            let currentTimeline = "";
+            let countriesChart = null;
+            let confusedCountriesChart = null;
+            let weeklyPerformanceChart = null;
+            let worldMap = null;
+            let isDarkMode = true; // Default to dark mode
 
-        // Theme toggle functionality
-        function toggleTheme() {
-            const html = document.documentElement;
-            const themeIcon = document.getElementById('themeIcon');
-            const themeButton = document.getElementById('themeToggle');
-            
-            isDarkMode = !isDarkMode;
-            
-            if (isDarkMode) {
-                // Switch to dark mode
-                html.setAttribute('data-bs-theme', 'dark');
-                themeIcon.textContent = '☀️';
-                // In dark mode, button shows sun (toggle to day) - use warning class
-                themeButton.className = 'btn btn-warning me-2';
-            } else {
-                // Switch to light mode
-                html.setAttribute('data-bs-theme', 'light');
-                themeIcon.textContent = '🌙';
-                // In light mode, button shows moon (toggle to dark) - use dark class
-                themeButton.className = 'btn btn-dark me-2';
+            // Game map variables for highlighting
+            let currentGameMap = null;
+            let gameMapMarkers = [];
+            let originalGameMapView = null;
+
+            // Theme toggle functionality
+            function toggleTheme() {
+                const html = document.documentElement;
+                const themeIcon = document.getElementById("themeIcon");
+                const themeButton = document.getElementById("themeToggle");
+
+                isDarkMode = !isDarkMode;
+
+                if (isDarkMode) {
+                    // Switch to dark mode
+                    html.setAttribute("data-bs-theme", "dark");
+                    themeIcon.textContent = "☀️";
+                    // In dark mode, button shows sun (toggle to day) - use warning class
+                    themeButton.className = "btn btn-warning me-2";
+                } else {
+                    // Switch to light mode
+                    html.setAttribute("data-bs-theme", "light");
+                    themeIcon.textContent = "🌙";
+                    // In light mode, button shows moon (toggle to dark) - use dark class
+                    themeButton.className = "btn btn-dark me-2";
+                }
+
+                // Update chart colors if they exist
+                updateChartColors();
+
+                // Update map tile layer
+                updateMapTileLayer();
+
+                // Save theme preference
+                localStorage.setItem("theme", isDarkMode ? "dark" : "light");
             }
-            
-            // Update chart colors if they exist
-            updateChartColors();
-            
-            // Update map tile layer
-            updateMapTileLayer();
-            
-            // Save theme preference
-            localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
-        }
 
-        // Load saved theme preference
-        function loadTheme() {
-            const savedTheme = localStorage.getItem('theme');
-            const themeButton = document.getElementById('themeToggle');
-            
-            if (savedTheme === 'light') {
-                isDarkMode = true; // Set to true so toggle switches to light
-                toggleTheme();
-            } else {
-                // Ensure we start in dark mode
-                document.documentElement.setAttribute('data-bs-theme', 'dark');
-                // In dark mode, button shows sun (toggle to day) - use warning class
-                themeButton.className = 'btn btn-warning me-2';
+            // Load saved theme preference
+            function loadTheme() {
+                const savedTheme = localStorage.getItem("theme");
+                const themeButton = document.getElementById("themeToggle");
+
+                if (savedTheme === "light") {
+                    isDarkMode = true; // Set to true so toggle switches to light
+                    toggleTheme();
+                } else {
+                    // Ensure we start in dark mode
+                    document.documentElement.setAttribute(
+                        "data-bs-theme",
+                        "dark",
+                    );
+                    // In dark mode, button shows sun (toggle to day) - use warning class
+                    themeButton.className = "btn btn-warning me-2";
+                }
             }
-        }
 
-        // Theme toggle event listener
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
-            loadTheme();
-            
-            // Parse URL hash for initial state
-            parseUrlHash();
-            
-            loadAllData();
-        });
+            // Theme toggle event listener
+            document.addEventListener("DOMContentLoaded", function () {
+                document
+                    .getElementById("themeToggle")
+                    .addEventListener("click", toggleTheme);
+                loadTheme();
 
-        // Listen for hash changes (when user navigates back/forward or clicks links)
-        window.addEventListener('hashchange', parseUrlHash);
+                // Parse URL hash for initial state
+                parseUrlHash();
 
-        // Tab switching
-        document.querySelectorAll('[data-target]').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                e.preventDefault();
-                const target = e.target.dataset.target;
-                switchGameType(target);
-            });
-        });
-
-        // Movement filter
-        document.querySelectorAll('input[name="movement"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                currentMovement = e.target.value;
                 loadAllData();
             });
-        });
 
-        function switchGameType(gameType) {
-            currentGameType = gameType;
-            
-            // Update tab appearance
-            document.querySelectorAll('[data-target]').forEach(tab => {
-                tab.classList.toggle('active', tab.dataset.target === gameType);
+            // Listen for hash changes (when user navigates back/forward or clicks links)
+            window.addEventListener("hashchange", parseUrlHash);
+
+            // Tab switching
+            document.querySelectorAll("[data-target]").forEach((tab) => {
+                tab.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    const target = e.target.dataset.target;
+                    switchGameType(target);
+                });
             });
-            
-            // Clear game details when switching game types
-            const gameDetail = document.getElementById('gameDetail');
-            gameDetail.innerHTML = `
+
+            // Movement filter
+            document
+                .querySelectorAll('input[name="movement"]')
+                .forEach((radio) => {
+                    radio.addEventListener("change", (e) => {
+                        currentMovement = e.target.value;
+                        updateUrlHash();
+                        loadAllData();
+                    });
+                });
+
+            // Timeline filter
+            document
+                .querySelectorAll('input[name="timeline"]')
+                .forEach((radio) => {
+                    radio.addEventListener("change", (e) => {
+                        currentTimeline = e.target.value;
+                        updateUrlHash();
+                        loadAllData();
+                    });
+                });
+
+            function switchGameType(gameType) {
+                currentGameType = gameType;
+
+                // Update tab appearance
+                document.querySelectorAll("[data-target]").forEach((tab) => {
+                    tab.classList.toggle(
+                        "active",
+                        tab.dataset.target === gameType,
+                    );
+                });
+
+                // Clear game details when switching game types
+                const gameDetail = document.getElementById("gameDetail");
+                gameDetail.innerHTML = `
                 <div class="text-center text-body-secondary">
                     Select a game to view details
                 </div>
             `;
-            
-            // Clear any existing game map
-            if (currentGameMap) {
-                currentGameMap.remove();
-                currentGameMap = null;
-                gameMapMarkers = [];
-                originalGameMapView = null;
-            }
-            
-            // Update URL hash
-            updateUrlHash();
-            
-            loadAllData();
-        }
 
-        // Data collection
-        const collectBtn = document.getElementById('collectBtn');
-        if (collectBtn) {
-            collectBtn.addEventListener('click', async function() {
-                await performDataCollection();
-            });
-        }
+                // Clear any existing game map
+                if (currentGameMap) {
+                    currentGameMap.remove();
+                    currentGameMap = null;
+                    gameMapMarkers = [];
+                    originalGameMapView = null;
+                }
 
-        async function performDataCollection() {
-            const btn = document.getElementById('collectBtn');
-            
-            // If button doesn't exist (public mode), just return
-            if (!btn) return;
-            
-            // Disable button and show collecting state
-            btn.disabled = true;
-            btn.textContent = 'Collecting...';
-            
-            try {
-                const response = await fetch('/api/collect_now');
-                const data = await response.json();
-                
-                // Show results in alert at top of page
-                showCollectionAlert(data);
-                
+                // Update URL hash
+                updateUrlHash();
+
                 loadAllData();
-            } catch (error) {
-                // Show error alert
-                showCollectionAlert({
-                    success: false,
-                    message: 'Error: ' + error.message
+            }
+
+            // Data collection
+            const collectBtn = document.getElementById("collectBtn");
+            if (collectBtn) {
+                collectBtn.addEventListener("click", async function () {
+                    await performDataCollection();
                 });
             }
-            
-            // Re-enable button if it exists
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Collect Data Now';
-            }
-        }
 
-        function showCollectionAlert(data) {
-            const alertContainer = document.getElementById('collectionAlert');
-            const alertDiv = alertContainer.querySelector('.alert');
-            const alertMessage = document.getElementById('collectionAlertMessage');
-            
-            if (data.success) {
-                // Success alert
-                alertDiv.className = 'alert alert-dismissible alert-success';
-                alertDiv.querySelector('.alert-heading').textContent = '📊 Data Collection Complete!';
-                
-                let message = data.message || 'Collection completed successfully!';
-                
-                // Add details if available
-                if (data.details) {
-                    const detailsArray = [];
-                    Object.keys(data.details).forEach(gameType => {
-                        const count = data.details[gameType];
-                        if (count > 0) {
-                            detailsArray.push(`${gameType}: ${count} new games`);
-                        }
+            async function performDataCollection() {
+                const btn = document.getElementById("collectBtn");
+
+                // If button doesn't exist (public mode), just return
+                if (!btn) return;
+
+                // Disable button and show collecting state
+                btn.disabled = true;
+                btn.textContent = "Collecting...";
+
+                try {
+                    const response = await fetch("/api/collect_now");
+                    const data = await response.json();
+
+                    // Show results in alert at top of page
+                    showCollectionAlert(data);
+
+                    loadAllData();
+                } catch (error) {
+                    // Show error alert
+                    showCollectionAlert({
+                        success: false,
+                        message: "Error: " + error.message,
                     });
-                    
-                    if (detailsArray.length > 0) {
-                        message += '<br><strong>Details:</strong> ' + detailsArray.join(', ');
+                }
+
+                // Re-enable button if it exists
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "Collect Data Now";
+                }
+            }
+
+            function showCollectionAlert(data) {
+                const alertContainer =
+                    document.getElementById("collectionAlert");
+                const alertDiv = alertContainer.querySelector(".alert");
+                const alertMessage = document.getElementById(
+                    "collectionAlertMessage",
+                );
+
+                if (data.success) {
+                    // Success alert
+                    alertDiv.className =
+                        "alert alert-dismissible alert-success";
+                    alertDiv.querySelector(".alert-heading").textContent =
+                        "📊 Data Collection Complete!";
+
+                    let message =
+                        data.message || "Collection completed successfully!";
+
+                    // Add details if available
+                    if (data.details) {
+                        const detailsArray = [];
+                        Object.keys(data.details).forEach((gameType) => {
+                            const count = data.details[gameType];
+                            if (count > 0) {
+                                detailsArray.push(
+                                    `${gameType}: ${count} new games`,
+                                );
+                            }
+                        });
+
+                        if (detailsArray.length > 0) {
+                            message +=
+                                "<br><strong>Details:</strong> " +
+                                detailsArray.join(", ");
+                        }
+                    }
+
+                    alertMessage.innerHTML = message;
+                } else {
+                    // Error/warning alert
+                    alertDiv.className =
+                        "alert alert-dismissible alert-warning";
+                    alertDiv.querySelector(".alert-heading").textContent =
+                        "⚠️ Collection Issue";
+                    alertMessage.innerHTML =
+                        data.message || "Collection failed";
+                }
+
+                // Show the alert
+                alertContainer.style.display = "block";
+
+                // Auto-hide after 10 seconds
+                setTimeout(() => {
+                    alertContainer.style.display = "none";
+                }, 10000);
+
+                // Scroll to top to show the alert
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            }
+
+            // Parse URL hash for initial state
+            function parseUrlHash() {
+                const hash = window.location.hash;
+                if (hash && hash.startsWith("#!")) {
+                    const params = new URLSearchParams(hash.substring(2)); // Remove #!
+                    if (params.get("gameType")) {
+                        const newGameType = params.get("gameType");
+                        if (newGameType !== currentGameType) {
+                            currentGameType = newGameType;
+                            switchGameType(newGameType);
+                        }
+                    }
+                    if (params.get("movement")) {
+                        currentMovement = params.get("movement");
+                        const movementRadio = document.querySelector(
+                            `input[name="movement"][value="${currentMovement}"]`,
+                        );
+                        if (movementRadio) movementRadio.checked = true;
+                    }
+                    if (params.get("timeline")) {
+                        currentTimeline = params.get("timeline");
+                        const timelineRadio = document.querySelector(
+                            `input[name="timeline"][value="${currentTimeline}"]`,
+                        );
+                        if (timelineRadio) timelineRadio.checked = true;
+                    }
+                    if (params.get("gameId")) {
+                        const gameId = params.get("gameId");
+                        // Small delay to ensure the game type has been switched if needed
+                        setTimeout(() => {
+                            showGameDetails(gameId);
+                        }, 100);
                     }
                 }
-                
-                alertMessage.innerHTML = message;
-            } else {
-                // Error/warning alert
-                alertDiv.className = 'alert alert-dismissible alert-warning';
-                alertDiv.querySelector('.alert-heading').textContent = '⚠️ Collection Issue';
-                alertMessage.innerHTML = data.message || 'Collection failed';
             }
-            
-            // Show the alert
-            alertContainer.style.display = 'block';
-            
-            // Auto-hide after 10 seconds
-            setTimeout(() => {
-                alertContainer.style.display = 'none';
-            }, 10000);
-            
-            // Scroll to top to show the alert
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
 
-        // Parse URL hash for initial state
-        function parseUrlHash() {
-            const hash = window.location.hash;
-            if (hash && hash.startsWith('#!')) {
-                const params = new URLSearchParams(hash.substring(2)); // Remove #!
-                
-                if (params.get('gameType')) {
-                    const newGameType = params.get('gameType');
-                    if (newGameType !== currentGameType) {
-                        currentGameType = newGameType;
-                        switchGameType(newGameType);
+            // Update URL hash when state changes
+            function updateUrlHash() {
+                const params = new URLSearchParams();
+                if (currentGameType !== "standard")
+                    params.set("gameType", currentGameType);
+                if (currentMovement) params.set("movement", currentMovement);
+                if (currentTimeline) params.set("timeline", currentTimeline);
+
+                const hash = params.toString();
+                window.location.hash = hash ? "#!" + hash : "";
+            }
+
+            // Load all dashboard data
+            async function loadAllData() {
+                await Promise.all([
+                    loadSummaryStats(),
+                    loadCountryStats(),
+                    loadCharts(),
+                    loadRecentGames(),
+                ]);
+            }
+
+            // Load summary statistics
+            async function loadSummaryStats() {
+                try {
+                    let url =
+                        "/api/summary?type=" +
+                        currentGameType +
+                        (currentMovement ? "&move=" + currentMovement : "");
+                    if (currentTimeline) url += "&timeline=" + currentTimeline;
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    document.getElementById("totalGames").textContent =
+                        data.TotalGames;
+                    document.getElementById("totalRounds").textContent =
+                        data.TotalRounds;
+                    document.getElementById("avgScore").textContent =
+                        Math.round(data.AvgScore);
+                    document.getElementById("avgDistance").textContent =
+                        Math.round(data.AvgDistKm);
+                    document.getElementById("favCountry").textContent =
+                        data.FavouriteCountry || "-";
+                    document.getElementById("bestCountry").textContent =
+                        data.BestCountry || "-";
+                } catch (error) {
+                    console.error("Failed to load summary stats:", error);
+                }
+            }
+
+            // Load country statistics
+            async function loadCountryStats() {
+                try {
+                    let url =
+                        "/api/country_stats?type=" +
+                        currentGameType +
+                        (currentMovement ? "&move=" + currentMovement : "");
+                    if (currentTimeline) url += "&timeline=" + currentTimeline;
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    // Ensure data is an array
+                    if (!Array.isArray(data)) {
+                        console.warn(
+                            "Country stats API returned non-array data:",
+                            data,
+                        );
+                        return;
                     }
-                }
-                
-                if (params.get('gameId')) {
-                    const gameId = params.get('gameId');
-                    // Small delay to ensure the game type has been switched if needed
-                    setTimeout(() => {
-                        showGameDetails(gameId);
-                    }, 100);
-                }
-            }
-        }
 
-        // Update URL hash when state changes
-        function updateUrlHash() {
-            const params = new URLSearchParams();
-            if (currentGameType !== 'standard') params.set('gameType', currentGameType);
-            
-            const hash = params.toString();
-            window.location.hash = hash ? '#!' + hash : '';
-        }
-
-        // Load all dashboard data
-        async function loadAllData() {
-            await Promise.all([
-                loadSummaryStats(),
-                loadCountryStats(),
-                loadCharts(),
-                loadRecentGames()
-            ]);
-        }
-
-        // Load summary statistics
-        async function loadSummaryStats() {
-            try {
-                const url = '/api/summary?type=' + currentGameType + (currentMovement ? '&move=' + currentMovement : '');
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                document.getElementById('totalGames').textContent = data.TotalGames;
-                document.getElementById('totalRounds').textContent = data.TotalRounds;
-                document.getElementById('avgScore').textContent = Math.round(data.AvgScore);
-                document.getElementById('avgDistance').textContent = Math.round(data.AvgDistKm);
-                document.getElementById('favCountry').textContent = data.FavouriteCountry || '-';
-                document.getElementById('bestCountry').textContent = data.BestCountry || '-';
-            } catch (error) {
-                console.error('Failed to load summary stats:', error);
-            }
-        }
-
-        // Load country statistics
-        async function loadCountryStats() {
-            try {
-                const url = '/api/country_stats?type=' + currentGameType + (currentMovement ? '&move=' + currentMovement : '');
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                // Ensure data is an array
-                if (!Array.isArray(data)) {
-                    console.warn('Country stats API returned non-array data:', data);
-                    return;
-                }
-                
-                // Points lost table
-                const pointsTable = document.getElementById('pointsLostTable');
-                pointsTable.innerHTML = '';
-                data.slice(0, 10).forEach(country => {
-                    const row = pointsTable.insertRow();
-                    const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
-                    row.innerHTML = `
-                        <td><a href="${countryLink}" style="text-decoration: none; color: inherit;">${country.country}</a></td>
+                    // Points lost table
+                    const pointsTable =
+                        document.getElementById("pointsLostTable");
+                    pointsTable.innerHTML = "";
+                    data.slice(0, 10).forEach((country) => {
+                        const row = pointsTable.insertRow();
+                        const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
+                        row.innerHTML = `
+                        <td><a href="${countryLink}">${country.country}</a></td>
                         <td>${Math.round(country.pointsLost)}</td>
                         <td>${country.count}</td>
                     `;
-                });
-                
-                // Distance table (sorted by distance)
-                const distanceTable = document.getElementById('distanceTable');
-                distanceTable.innerHTML = '';
-                
-                const sortedByDistance = [...data].sort((a, b) => b.distance - a.distance);
-                sortedByDistance.slice(0, 10).forEach(country => {
-                    const row = distanceTable.insertRow();
-                    const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
-                    row.innerHTML = `
-                        <td><a href="${countryLink}" style="text-decoration: none; color: inherit;">${country.country}</a></td>
+                    });
+
+                    // Distance table (sorted by distance)
+                    const distanceTable =
+                        document.getElementById("distanceTable");
+                    distanceTable.innerHTML = "";
+
+                    const sortedByDistance = [...data].sort(
+                        (a, b) => b.distance - a.distance,
+                    );
+                    sortedByDistance.slice(0, 10).forEach((country) => {
+                        const row = distanceTable.insertRow();
+                        const countryLink = `/country/${country.countryCode}#gameType=${currentGameType}`;
+                        row.innerHTML = `
+                        <td><a href="${countryLink}">${country.country}</a></td>
                         <td>${Math.round(country.distance)}</td>
                         <td>${country.count}</td>
                     `;
-                });
-            } catch (error) {
-                console.error('Failed to load country stats:', error);
-            }
-        }
-
-        // Load charts
-        async function loadCharts() {
-            await loadCountriesChart();
-            await loadConfusedCountriesChart();
-            await loadWeeklyPerformanceChart();
-            await loadWorldMap();
-        }
-
-        // Update chart colors based on current theme
-        function updateChartColors() {
-            const textColor = isDarkMode ? 'white' : '#212529';
-            const gridColor = isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-            
-            // Update countries chart
-            if (countriesChart) {
-                countriesChart.options.plugins.legend.labels.color = textColor;
-                countriesChart.options.scales.x.ticks.color = textColor;
-                countriesChart.options.scales.x.grid.color = gridColor;
-                countriesChart.options.scales.y.ticks.color = textColor;
-                countriesChart.options.scales.y.grid.color = gridColor;
-                countriesChart.update();
-            }
-            
-            // Update confused countries chart
-            if (confusedCountriesChart) {
-                confusedCountriesChart.options.plugins.legend.labels.color = textColor;
-                confusedCountriesChart.options.scales.x.ticks.color = textColor;
-                confusedCountriesChart.options.scales.x.grid.color = gridColor;
-                confusedCountriesChart.options.scales.x.title.color = textColor;
-                confusedCountriesChart.options.scales.y.ticks.color = textColor;
-                confusedCountriesChart.options.scales.y.grid.color = gridColor;
-                confusedCountriesChart.update();
-            }
-
-            // Update weekly performance chart
-            if (weeklyPerformanceChart) {
-                weeklyPerformanceChart.options.plugins.legend.labels.color = textColor;
-                weeklyPerformanceChart.options.scales.x.ticks.color = textColor;
-                weeklyPerformanceChart.options.scales.x.grid.color = gridColor;
-                weeklyPerformanceChart.options.scales.y.ticks.color = textColor;
-                weeklyPerformanceChart.options.scales.y.grid.color = gridColor;
-                if (weeklyPerformanceChart.options.scales.y1) {
-                    weeklyPerformanceChart.options.scales.y1.ticks.color = textColor;
-                    weeklyPerformanceChart.options.scales.y1.grid.color = gridColor;
+                    });
+                } catch (error) {
+                    console.error("Failed to load country stats:", error);
                 }
-                weeklyPerformanceChart.update();
             }
-        }
 
-        // Update map tile layer based on theme
-        function updateMapTileLayer() {
-            if (worldMap) {
-                // Remove existing tile layers
-                worldMap.eachLayer(layer => {
-                    if (layer instanceof L.TileLayer) {
-                        worldMap.removeLayer(layer);
-                    }
-                });
-                
-                // Add appropriate tile layer based on theme
-                const tileUrl = isDarkMode ? 
-                    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' :
-                    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-                
-                L.tileLayer(tileUrl, {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                    subdomains: 'abcd',
-                    maxZoom: 19
-                }).addTo(worldMap);
+            // Load charts
+            async function loadCharts() {
+                await loadCountriesChart();
+                await loadConfusedCountriesChart();
+                await loadWeeklyPerformanceChart();
+                await loadWorldMap();
             }
-        }
 
-        // Get chart colors based on current theme
-        function getChartColors() {
-            return {
-                textColor: isDarkMode ? 'white' : '#212529',
-                gridColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-            };
-        }
+            // Update chart colors based on current theme
+            function updateChartColors() {
+                const textColor = isDarkMode ? "white" : "#212529";
+                const gridColor = isDarkMode
+                    ? "rgba(255,255,255,0.1)"
+                    : "rgba(0,0,0,0.1)";
 
-        async function loadCountriesChart() {
-            try {
-                const url = '/api/chart_data?chart=countryPerformance&type=' + currentGameType;
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                const ctx = document.getElementById('countriesChart').getContext('2d');
-                
+                // Update countries chart
                 if (countriesChart) {
-                    countriesChart.destroy();
+                    countriesChart.options.plugins.legend.labels.color =
+                        textColor;
+                    countriesChart.options.scales.x.ticks.color = textColor;
+                    countriesChart.options.scales.x.grid.color = gridColor;
+                    countriesChart.options.scales.y.ticks.color = textColor;
+                    countriesChart.options.scales.y.grid.color = gridColor;
+                    countriesChart.update();
                 }
-                
-                // Configure chart type based on game type
-                const colors = getChartColors();
-                const chartConfig = {
-                    type: 'bar',
-                    data: data,
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                labels: { color: colors.textColor }
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    footer: function(tooltipItems) {
-                                        if (currentGameType === 'duels' && tooltipItems.length >= 2) {
-                                            const total = tooltipItems[0].raw;
-                                            const wins = tooltipItems[1].raw;
-                                            const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
-                                            return `Win Rate: ${winRate}%`;
-                                        } else if (currentGameType !== 'duels') {
-                                            // For single player games, show total rounds from dataset
-                                            const datasetIndex = tooltipItems[0].datasetIndex;
-                                            const pointIndex = tooltipItems[0].dataIndex;
-                                            const dataset = data.datasets[datasetIndex];
-                                            if (dataset.totalRounds && dataset.totalRounds[pointIndex]) {
-                                                const totalRounds = Math.round(dataset.totalRounds[pointIndex]);
-                                                return `Total Rounds: ${totalRounds}`;
-                                            }
-                                        }
-                                        return '';
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: { 
-                                ticks: { color: colors.textColor },
-                                grid: { color: colors.gridColor }
-                            },
-                            y: { 
-                                ticks: { color: colors.textColor },
-                                grid: { color: colors.gridColor }
-                            }
-                        }
-                    }
-                };
 
-                countriesChart = new Chart(ctx, chartConfig);
-            } catch (error) {
-                console.error('Failed to load countries chart:', error);
-            }
-        }
-
-        async function loadConfusedCountriesChart() {
-            try {
-                const url = '/api/chart_data?chart=confusedCountries&type=' + currentGameType;
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                const ctx = document.getElementById('confusedCountriesChart').getContext('2d');
-                
+                // Update confused countries chart
                 if (confusedCountriesChart) {
-                    confusedCountriesChart.destroy();
+                    confusedCountriesChart.options.plugins.legend.labels.color =
+                        textColor;
+                    confusedCountriesChart.options.scales.x.ticks.color =
+                        textColor;
+                    confusedCountriesChart.options.scales.x.grid.color =
+                        gridColor;
+                    confusedCountriesChart.options.scales.x.title.color =
+                        textColor;
+                    confusedCountriesChart.options.scales.y.ticks.color =
+                        textColor;
+                    confusedCountriesChart.options.scales.y.grid.color =
+                        gridColor;
+                    confusedCountriesChart.update();
                 }
-                
-                // Check if we have data
-                if (!data.labels || data.labels.length === 0) {
-                    // Show a message when no confusion data is available
-                    ctx.font = '16px Arial';
-                    ctx.fillStyle = '#bdc3c7';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('No confusion data available yet', ctx.canvas.width / 2, ctx.canvas.height / 2);
-                    return;
-                }
-                
-                const colors = getChartColors();
-                const chartConfig = {
-                    type: 'bar',
-                    data: data,
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y', // This makes it horizontal
-                        plugins: {
-                            legend: {
-                                labels: { color: colors.textColor }
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return `Confused ${context.raw} times`;
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: { 
-                                ticks: { color: colors.textColor },
-                                grid: { color: colors.gridColor },
-                                title: {
-                                    display: true,
-                                    text: 'Number of Confusions',
-                                    color: colors.textColor
-                                }
-                            },
-                            y: { 
-                                ticks: { 
-                                    color: colors.textColor,
-                                    font: { size: 10 }
-                                },
-                                grid: { color: colors.gridColor }
-                            }
-                        }
-                    }
-                };
 
-                confusedCountriesChart = new Chart(ctx, chartConfig);
-            } catch (error) {
-                console.error('Failed to load confused countries chart:', error);
-            }
-        }
-
-        async function loadWeeklyPerformanceChart() {
-            try {
-                const url = '/api/chart_data?chart=weeklyPerformance&type=' + currentGameType + (currentMovement ? '&move=' + currentMovement : '');
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                const ctx = document.getElementById('weeklyPerformanceChart').getContext('2d');
-                
+                // Update weekly performance chart
                 if (weeklyPerformanceChart) {
-                    weeklyPerformanceChart.destroy();
-                }
-                
-                // Check if we have data
-                if (!data.labels || data.labels.length === 0) {
-                    // Show a message when no data is available
-                    ctx.font = '16px Arial';
-                    ctx.fillStyle = '#bdc3c7';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('Not enough weekly data available yet', ctx.canvas.width / 2, ctx.canvas.height / 2);
-                    return;
-                }
-                
-                const colors = getChartColors();
-                const chartConfig = {
-                    type: 'line',
-                    data: {
-                        labels: data.labels,
-                        datasets: [
-                            {
-                                label: 'Average Score',
-                                data: data.datasets[0].data,
-                                borderColor: 'rgba(52, 152, 219, 1)',
-                                backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                                yAxisID: 'y',
-                                tension: 0.2,
-                                fill: false
-                            },
-                            {
-                                label: 'Average Distance (km)',
-                                data: data.datasets[1].data,
-                                borderColor: 'rgba(231, 76, 60, 1)',
-                                backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                                yAxisID: 'y1',
-                                tension: 0.2,
-                                fill: false
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: {
-                            mode: 'index',
-                            intersect: false,
-                        },
-                        plugins: {
-                            legend: {
-                                labels: { color: colors.textColor }
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    afterLabel: function(context) {
-                                        if (context.datasetIndex === 1) {
-                                            return 'Lower is better';
-                                        }
-                                        return 'Higher is better';
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: { 
-                                ticks: { color: colors.textColor },
-                                grid: { color: colors.gridColor }
-                            },
-                            y: {
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                ticks: { color: colors.textColor },
-                                grid: { color: colors.gridColor },
-                                title: {
-                                    display: true,
-                                    text: 'Average Score',
-                                    color: colors.textColor
-                                }
-                            },
-                            y1: {
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                ticks: { color: colors.textColor },
-                                grid: {
-                                    drawOnChartArea: false,
-                                    color: colors.gridColor
-                                },
-                                title: {
-                                    display: true,
-                                    text: 'Average Distance (km)',
-                                    color: colors.textColor
-                                }
-                            }
-                        }
+                    weeklyPerformanceChart.options.plugins.legend.labels.color =
+                        textColor;
+                    weeklyPerformanceChart.options.scales.x.ticks.color =
+                        textColor;
+                    weeklyPerformanceChart.options.scales.x.grid.color =
+                        gridColor;
+                    weeklyPerformanceChart.options.scales.y.ticks.color =
+                        textColor;
+                    weeklyPerformanceChart.options.scales.y.grid.color =
+                        gridColor;
+                    if (weeklyPerformanceChart.options.scales.y1) {
+                        weeklyPerformanceChart.options.scales.y1.ticks.color =
+                            textColor;
+                        weeklyPerformanceChart.options.scales.y1.grid.color =
+                            gridColor;
                     }
-                };
-
-                weeklyPerformanceChart = new Chart(ctx, chartConfig);
-            } catch (error) {
-                console.error('Failed to load weekly performance chart:', error);
-            }
-        }
-
-        // Table sorting functionality
-        function sortTable(tableId, columnIndex) {
-            const table = document.getElementById(tableId);
-            const rows = Array.from(table.rows);
-            
-            // Determine if we should sort ascending or descending
-            const currentSort = table.dataset.sortColumn;
-            const currentDir = table.dataset.sortDirection || 'asc';
-            const newDir = (currentSort == columnIndex && currentDir === 'asc') ? 'desc' : 'asc';
-            
-            // Store sort state
-            table.dataset.sortColumn = columnIndex;
-            table.dataset.sortDirection = newDir;
-            
-            rows.sort((a, b) => {
-                const aVal = a.cells[columnIndex].textContent.trim();
-                const bVal = b.cells[columnIndex].textContent.trim();
-                
-                // Try to parse as numbers
-                const aNum = parseFloat(aVal.replace(/,/g, ''));
-                const bNum = parseFloat(bVal.replace(/,/g, ''));
-                
-                let result;
-                if (!isNaN(aNum) && !isNaN(bNum)) {
-                    result = aNum - bNum;
-                } else {
-                    result = aVal.localeCompare(bVal);
+                    weeklyPerformanceChart.update();
                 }
-                
-                return newDir === 'desc' ? -result : result;
-            });
-            
-            // Clear table and re-add sorted rows
-            table.innerHTML = '';
-            rows.forEach(row => table.appendChild(row));
-        }
+            }
 
-        // World Map Implementation
-        async function loadWorldMap() {
-            try {
-                if (!worldMap) {
-                    // Initialize the map
-                    worldMap = L.map('worldMap', {
-                        center: [20, 0],
-                        zoom: 2,
-                        zoomControl: true,
-                        scrollWheelZoom: false
+            // Update map tile layer based on theme
+            function updateMapTileLayer() {
+                if (worldMap) {
+                    // Remove existing tile layers
+                    worldMap.eachLayer((layer) => {
+                        if (layer instanceof L.TileLayer) {
+                            worldMap.removeLayer(layer);
+                        }
                     });
 
-                    // Add tile layer based on current theme
-                    const tileUrl = isDarkMode ? 
-                        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' :
-                        'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-                    
+                    // Add appropriate tile layer based on theme
+                    const tileUrl = isDarkMode
+                        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
                     L.tileLayer(tileUrl, {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                        subdomains: 'abcd',
-                        maxZoom: 19
+                        attribution:
+                            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                        subdomains: "abcd",
+                        maxZoom: 19,
                     }).addTo(worldMap);
                 }
+            }
 
-                // Load country performance data and GeoJSON
-                const [performanceResponse, geoJsonResponse] = await Promise.all([
-                    fetch('/api/map_data?type=' + currentGameType + (currentMovement ? '&move=' + currentMovement : '')),
-                    fetch('/api/countries_geojson')
-                ]);
-                
-                const countries = await performanceResponse.json();
-                const geoJsonData = await geoJsonResponse.json();
+            // Get chart colors based on current theme
+            function getChartColors() {
+                return {
+                    textColor: isDarkMode ? "white" : "#212529",
+                    gridColor: isDarkMode
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(0,0,0,0.1)",
+                };
+            }
 
-                // Ensure countries data is an array
-                if (!Array.isArray(countries)) {
-                    console.warn('Map data API returned non-array data:', countries);
-                    return;
-                }
+            async function loadCountriesChart() {
+                try {
+                    let url =
+                        "/api/chart_data?chart=countryPerformance&type=" +
+                        currentGameType +
+                        (currentMovement ? "&move=" + currentMovement : "");
+                    if (currentTimeline) url += "&timeline=" + currentTimeline;
+                    const response = await fetch(url);
+                    const data = await response.json();
 
-                // Clear existing layers (except base tiles)
-                worldMap.eachLayer(layer => {
-                    if (layer instanceof L.GeoJSON || layer instanceof L.CircleMarker) {
-                        worldMap.removeLayer(layer);
+                    const ctx = document
+                        .getElementById("countriesChart")
+                        .getContext("2d");
+
+                    if (countriesChart) {
+                        countriesChart.destroy();
                     }
+
+                    // Configure chart type based on game type
+                    const colors = getChartColors();
+                    const chartConfig = {
+                        type: "bar",
+                        data: data,
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    labels: { color: colors.textColor },
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        footer: function (tooltipItems) {
+                                            if (
+                                                currentGameType === "duels" &&
+                                                tooltipItems.length >= 2
+                                            ) {
+                                                const total =
+                                                    tooltipItems[0].raw;
+                                                const wins =
+                                                    tooltipItems[1].raw;
+                                                const winRate =
+                                                    total > 0
+                                                        ? (
+                                                              (wins / total) *
+                                                              100
+                                                          ).toFixed(1)
+                                                        : 0;
+                                                return `Win Rate: ${winRate}%`;
+                                            } else if (
+                                                currentGameType !== "duels"
+                                            ) {
+                                                // For single player games, show total rounds from dataset
+                                                const datasetIndex =
+                                                    tooltipItems[0]
+                                                        .datasetIndex;
+                                                const pointIndex =
+                                                    tooltipItems[0].dataIndex;
+                                                const dataset =
+                                                    data.datasets[datasetIndex];
+                                                if (
+                                                    dataset.totalRounds &&
+                                                    dataset.totalRounds[
+                                                        pointIndex
+                                                    ]
+                                                ) {
+                                                    const totalRounds =
+                                                        Math.round(
+                                                            dataset.totalRounds[
+                                                                pointIndex
+                                                            ],
+                                                        );
+                                                    return `Total Rounds: ${totalRounds}`;
+                                                }
+                                            }
+                                            return "";
+                                        },
+                                    },
+                                },
+                            },
+                            scales: {
+                                x: {
+                                    ticks: { color: colors.textColor },
+                                    grid: { color: colors.gridColor },
+                                },
+                                y: {
+                                    ticks: { color: colors.textColor },
+                                    grid: { color: colors.gridColor },
+                                },
+                            },
+                        },
+                    };
+
+                    countriesChart = new Chart(ctx, chartConfig);
+                } catch (error) {
+                    console.error("Failed to load countries chart:", error);
+                }
+            }
+
+            async function loadConfusedCountriesChart() {
+                try {
+                    const url =
+                        "/api/chart_data?chart=confusedCountries&type=" +
+                        currentGameType;
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    const ctx = document
+                        .getElementById("confusedCountriesChart")
+                        .getContext("2d");
+
+                    if (confusedCountriesChart) {
+                        confusedCountriesChart.destroy();
+                    }
+
+                    // Check if we have data
+                    if (!data.labels || data.labels.length === 0) {
+                        // Show a message when no confusion data is available
+                        ctx.font = "16px Arial";
+                        ctx.fillStyle = "#bdc3c7";
+                        ctx.textAlign = "center";
+                        ctx.fillText(
+                            "No confusion data available yet",
+                            ctx.canvas.width / 2,
+                            ctx.canvas.height / 2,
+                        );
+                        return;
+                    }
+
+                    const colors = getChartColors();
+                    const chartConfig = {
+                        type: "bar",
+                        data: data,
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: "y", // This makes it horizontal
+                            plugins: {
+                                legend: {
+                                    labels: { color: colors.textColor },
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function (context) {
+                                            return `Confused ${context.raw} times`;
+                                        },
+                                    },
+                                },
+                            },
+                            scales: {
+                                x: {
+                                    ticks: { color: colors.textColor },
+                                    grid: { color: colors.gridColor },
+                                    title: {
+                                        display: true,
+                                        text: "Number of Confusions",
+                                        color: colors.textColor,
+                                    },
+                                },
+                                y: {
+                                    ticks: {
+                                        color: colors.textColor,
+                                        font: { size: 10 },
+                                    },
+                                    grid: { color: colors.gridColor },
+                                },
+                            },
+                        },
+                    };
+
+                    confusedCountriesChart = new Chart(ctx, chartConfig);
+                } catch (error) {
+                    console.error(
+                        "Failed to load confused countries chart:",
+                        error,
+                    );
+                }
+            }
+
+            async function loadWeeklyPerformanceChart() {
+                try {
+                    const url =
+                        "/api/chart_data?chart=weeklyPerformance&type=" +
+                        currentGameType +
+                        (currentMovement ? "&move=" + currentMovement : "");
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    const ctx = document
+                        .getElementById("weeklyPerformanceChart")
+                        .getContext("2d");
+
+                    if (weeklyPerformanceChart) {
+                        weeklyPerformanceChart.destroy();
+                    }
+
+                    // Check if we have data
+                    if (!data.labels || data.labels.length === 0) {
+                        // Show a message when no data is available
+                        ctx.font = "16px Arial";
+                        ctx.fillStyle = "#bdc3c7";
+                        ctx.textAlign = "center";
+                        ctx.fillText(
+                            "Not enough weekly data available yet",
+                            ctx.canvas.width / 2,
+                            ctx.canvas.height / 2,
+                        );
+                        return;
+                    }
+
+                    const colors = getChartColors();
+                    const chartConfig = {
+                        type: "line",
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                {
+                                    label: "Average Score",
+                                    data: data.datasets[0].data,
+                                    borderColor: "rgba(52, 152, 219, 1)",
+                                    backgroundColor: "rgba(52, 152, 219, 0.1)",
+                                    yAxisID: "y",
+                                    tension: 0.2,
+                                    fill: false,
+                                },
+                                {
+                                    label: "Average Distance (km)",
+                                    data: data.datasets[1].data,
+                                    borderColor: "rgba(231, 76, 60, 1)",
+                                    backgroundColor: "rgba(231, 76, 60, 0.1)",
+                                    yAxisID: "y1",
+                                    tension: 0.2,
+                                    fill: false,
+                                },
+                            ],
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: "index",
+                                intersect: false,
+                            },
+                            plugins: {
+                                legend: {
+                                    labels: { color: colors.textColor },
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        afterLabel: function (context) {
+                                            if (context.datasetIndex === 1) {
+                                                return "Lower is better";
+                                            }
+                                            return "Higher is better";
+                                        },
+                                    },
+                                },
+                            },
+                            scales: {
+                                x: {
+                                    ticks: { color: colors.textColor },
+                                    grid: { color: colors.gridColor },
+                                },
+                                y: {
+                                    type: "linear",
+                                    display: true,
+                                    position: "left",
+                                    ticks: { color: colors.textColor },
+                                    grid: { color: colors.gridColor },
+                                    title: {
+                                        display: true,
+                                        text: "Average Score",
+                                        color: colors.textColor,
+                                    },
+                                },
+                                y1: {
+                                    type: "linear",
+                                    display: true,
+                                    position: "right",
+                                    ticks: { color: colors.textColor },
+                                    grid: {
+                                        drawOnChartArea: false,
+                                        color: colors.gridColor,
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: "Average Distance (km)",
+                                        color: colors.textColor,
+                                    },
+                                },
+                            },
+                        },
+                    };
+
+                    weeklyPerformanceChart = new Chart(ctx, chartConfig);
+                } catch (error) {
+                    console.error(
+                        "Failed to load weekly performance chart:",
+                        error,
+                    );
+                }
+            }
+
+            // Table sorting functionality
+            function sortTable(tableId, columnIndex) {
+                const table = document.getElementById(tableId);
+                const rows = Array.from(table.rows);
+
+                // Determine if we should sort ascending or descending
+                const currentSort = table.dataset.sortColumn;
+                const currentDir = table.dataset.sortDirection || "asc";
+                const newDir =
+                    currentSort == columnIndex && currentDir === "asc"
+                        ? "desc"
+                        : "asc";
+
+                // Store sort state
+                table.dataset.sortColumn = columnIndex;
+                table.dataset.sortDirection = newDir;
+
+                rows.sort((a, b) => {
+                    const aVal = a.cells[columnIndex].textContent.trim();
+                    const bVal = b.cells[columnIndex].textContent.trim();
+
+                    // Try to parse as numbers
+                    const aNum = parseFloat(aVal.replace(/,/g, ""));
+                    const bNum = parseFloat(bVal.replace(/,/g, ""));
+
+                    let result;
+                    if (!isNaN(aNum) && !isNaN(bNum)) {
+                        result = aNum - bNum;
+                    } else {
+                        result = aVal.localeCompare(bVal);
+                    }
+
+                    return newDir === "desc" ? -result : result;
                 });
 
-                // Create a lookup for country performance data
-                const countryLookup = {};
-                countries.forEach(country => {
-                    countryLookup[country.countryCode.toLowerCase()] = country;
-                });
+                // Clear table and re-add sorted rows
+                table.innerHTML = "";
+                rows.forEach((row) => table.appendChild(row));
+            }
 
-                // Add GeoJSON layer with country coloring
-                const countryLayer = L.geoJSON(geoJsonData, {
-                    style: function(feature) {
-                        const countryCode = getCountryCode(feature);
-                        const countryData = countryLookup[countryCode];
-                        
-                        if (countryData) {
-                            // Calculate color based on average score (0-5000 scale)
-                            const scoreRatio = Math.min(countryData.avgScore / 5000, 1);
-                            const color = getPerformanceColor(scoreRatio);
-                            
-                            return {
-                                fillColor: color,
-                                weight: 1,
-                                opacity: 0.8,
-                                color: '#fff',
-                                fillOpacity: 0.6
-                            };
-                        } else {
-                            // No data - use gray
-                            return {
-                                fillColor: '#555',
-                                weight: 1,
-                                opacity: 0.3,
-                                color: '#999',
-                                fillOpacity: 0.2
-                            };
+            // World Map Implementation
+            async function loadWorldMap() {
+                try {
+                    if (!worldMap) {
+                        // Initialize the map
+                        worldMap = L.map("worldMap", {
+                            center: [20, 0],
+                            zoom: 2,
+                            zoomControl: true,
+                            scrollWheelZoom: false,
+                        });
+
+                        // Add tile layer based on current theme
+                        const tileUrl = isDarkMode
+                            ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                            : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
+                        L.tileLayer(tileUrl, {
+                            attribution:
+                                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                            subdomains: "abcd",
+                            maxZoom: 19,
+                        }).addTo(worldMap);
+                    }
+
+                    // Load country performance data and GeoJSON
+                    const [performanceResponse, geoJsonResponse] =
+                        await Promise.all([
+                            fetch(
+                                "/api/map_data?type=" +
+                                    currentGameType +
+                                    (currentMovement
+                                        ? "&move=" + currentMovement
+                                        : ""),
+                            ),
+                            fetch("/api/countries_geojson"),
+                        ]);
+
+                    const countries = await performanceResponse.json();
+                    const geoJsonData = await geoJsonResponse.json();
+
+                    // Ensure countries data is an array
+                    if (!Array.isArray(countries)) {
+                        console.warn(
+                            "Map data API returned non-array data:",
+                            countries,
+                        );
+                        return;
+                    }
+
+                    // Clear existing layers (except base tiles)
+                    worldMap.eachLayer((layer) => {
+                        if (
+                            layer instanceof L.GeoJSON ||
+                            layer instanceof L.CircleMarker
+                        ) {
+                            worldMap.removeLayer(layer);
                         }
-                    },
-                    onEachFeature: function(feature, layer) {
-                        const countryCode = getCountryCode(feature);
-                        const countryData = countryLookup[countryCode];
-                        
-                        if (countryData) {
-                            layer.bindPopup(`
+                    });
+
+                    // Create a lookup for country performance data
+                    const countryLookup = {};
+                    countries.forEach((country) => {
+                        countryLookup[country.countryCode.toLowerCase()] =
+                            country;
+                    });
+
+                    // Add GeoJSON layer with country coloring
+                    const countryLayer = L.geoJSON(geoJsonData, {
+                        style: function (feature) {
+                            const countryCode = getCountryCode(feature);
+                            const countryData = countryLookup[countryCode];
+
+                            if (countryData) {
+                                // Calculate color based on average score (0-5000 scale)
+                                const scoreRatio = Math.min(
+                                    countryData.avgScore / 5000,
+                                    1,
+                                );
+                                const color = getPerformanceColor(scoreRatio);
+
+                                return {
+                                    fillColor: color,
+                                    weight: 1,
+                                    opacity: 0.8,
+                                    color: "#fff",
+                                    fillOpacity: 0.6,
+                                };
+                            } else {
+                                // No data - use gray
+                                return {
+                                    fillColor: "#555",
+                                    weight: 1,
+                                    opacity: 0.3,
+                                    color: "#999",
+                                    fillOpacity: 0.2,
+                                };
+                            }
+                        },
+                        onEachFeature: function (feature, layer) {
+                            const countryCode = getCountryCode(feature);
+                            const countryData = countryLookup[countryCode];
+
+                            if (countryData) {
+                                layer.bindPopup(`
                                 <strong>${countryData.country}</strong><br>
                                 Games: ${countryData.games}<br>
                                 Avg Score: ${Math.round(countryData.avgScore)}<br>
                                 Avg Distance: ${Math.round(countryData.avgDistance)}km
                             `);
-                        } else {
-                            const name = feature.properties.nameEn || feature.properties.name || 'Unknown';
-                            layer.bindPopup(`<strong>${name}</strong><br>No data available`);
-                        }
-                    }
-                });
+                            } else {
+                                const name =
+                                    feature.properties.nameEn ||
+                                    feature.properties.name ||
+                                    "Unknown";
+                                layer.bindPopup(
+                                    `<strong>${name}</strong><br>No data available`,
+                                );
+                            }
+                        },
+                    });
 
-                countryLayer.addTo(worldMap);
+                    countryLayer.addTo(worldMap);
 
-                // Refresh map size
-                setTimeout(() => {
-                    worldMap.invalidateSize();
-                }, 100);
-
-            } catch (error) {
-                console.error('Failed to load world map:', error);
-            }
-        }
-
-        function getCountryCode(feature) {
-            // Get country code from GeoJSON feature properties
-            if (feature.properties.country) {
-                return feature.properties.country.toLowerCase();
-            }
-            if (feature.properties.iso1A2) {
-                return feature.properties.iso1A2.toLowerCase();
-            }
-            if (feature.properties.nameEn) {
-                return feature.properties.nameEn.toLowerCase();
-            }
-            return '';
-        }
-
-        function getPerformanceColor(ratio) {
-            // Red to Yellow to Green gradient based on performance
-            if (ratio < 0.5) {
-                // Red to Yellow
-                const r = 255;
-                const g = Math.floor(255 * (ratio * 2));
-                const b = 0;
-                return `rgb(${r},${g},${b})`;
-            } else {
-                // Yellow to Green
-                const r = Math.floor(255 * (2 - ratio * 2));
-                const g = 255;
-                const b = 0;
-                return `rgb(${r},${g},${b})`;
-            }
-        }
-
-        // Load recent games
-        async function loadRecentGames() {
-            try {
-                const url = '/api/games?type=' + currentGameType;
-                const response = await fetch(url);
-                const games = await response.json();
-                
-                const gamesList = document.getElementById('gamesList');
-                gamesList.innerHTML = '';
-                
-                if (!games || games.length === 0) {
-                    gamesList.innerHTML = '<div class="list-group-item text-center">No games found</div>';
-                    return;
+                    // Refresh map size
+                    setTimeout(() => {
+                        worldMap.invalidateSize();
+                    }, 100);
+                } catch (error) {
+                    console.error("Failed to load world map:", error);
                 }
-                
-                games.forEach(game => {
-                    const gameItem = document.createElement('div');
-                    gameItem.className = 'list-group-item list-group-item-action game-item';
-                    
-                    // Add win/loss emoji for duels
-                    let resultEmoji = '';
-                    if (currentGameType === 'duels' && game.result) {
-                        switch (game.result) {
-                            case 'win':
-                                resultEmoji = '🏆 ';
-                                break;
-                            case 'loss':
-                                resultEmoji = '💔 ';
-                                break;
-                            case 'draw':
-                                resultEmoji = '🤝 ';
-                                break;
-                        }
+            }
+
+            function getCountryCode(feature) {
+                // Get country code from GeoJSON feature properties
+                if (feature.properties.country) {
+                    return feature.properties.country.toLowerCase();
+                }
+                if (feature.properties.iso1A2) {
+                    return feature.properties.iso1A2.toLowerCase();
+                }
+                if (feature.properties.nameEn) {
+                    return feature.properties.nameEn.toLowerCase();
+                }
+                return "";
+            }
+
+            function getPerformanceColor(ratio) {
+                // Red to Yellow to Green gradient based on performance
+                if (ratio < 0.5) {
+                    // Red to Yellow
+                    const r = 255;
+                    const g = Math.floor(255 * (ratio * 2));
+                    const b = 0;
+                    return `rgb(${r},${g},${b})`;
+                } else {
+                    // Yellow to Green
+                    const r = Math.floor(255 * (2 - ratio * 2));
+                    const g = 255;
+                    const b = 0;
+                    return `rgb(${r},${g},${b})`;
+                }
+            }
+
+            // Load recent games
+            async function loadRecentGames() {
+                try {
+                    const url = "/api/games?type=" + currentGameType;
+                    const response = await fetch(url);
+                    const games = await response.json();
+
+                    const gamesList = document.getElementById("gamesList");
+                    gamesList.innerHTML = "";
+
+                    if (!games || games.length === 0) {
+                        gamesList.innerHTML =
+                            '<div class="list-group-item text-center">No games found</div>';
+                        return;
                     }
-                    
-                    // Use gameDate if available, otherwise fall back to created
-                    const displayDate = game.gameDate ? new Date(game.gameDate) : new Date(game.created);
-                    
-                    // Different display for standard vs duels
-                    let gameTitle, gameSubtitle;
-                    if (currentGameType === 'standard') {
-                        // For standard games: show "Map Name (Total Score)" or fallback to ID
-                        if (game.mapName && game.totalScore !== undefined) {
-                            gameTitle = `${game.mapName} (${game.totalScore})`;
-                        } else if (game.mapName) {
-                            gameTitle = game.mapName;
+
+                    games.forEach((game) => {
+                        const gameItem = document.createElement("div");
+                        gameItem.className =
+                            "list-group-item list-group-item-action game-item";
+
+                        // Add win/loss emoji for duels
+                        let resultEmoji = "";
+                        if (currentGameType === "duels" && game.result) {
+                            switch (game.result) {
+                                case "win":
+                                    resultEmoji = "🏆 ";
+                                    break;
+                                case "loss":
+                                    resultEmoji = "💔 ";
+                                    break;
+                                case "draw":
+                                    resultEmoji = "🤝 ";
+                                    break;
+                            }
+                        }
+
+                        // Use gameDate if available, otherwise fall back to created
+                        const displayDate = game.gameDate
+                            ? new Date(game.gameDate)
+                            : new Date(game.created);
+
+                        // Different display for standard vs duels
+                        let gameTitle, gameSubtitle;
+                        if (currentGameType === "standard") {
+                            // For standard games: show "Map Name (Total Score)" or fallback to ID
+                            if (game.mapName && game.totalScore !== undefined) {
+                                gameTitle = `${game.mapName} (${game.totalScore})`;
+                            } else if (game.mapName) {
+                                gameTitle = game.mapName;
+                            } else {
+                                gameTitle = `${game.id.substring(0, 8)}...`;
+                            }
+                            gameSubtitle = game.movement;
                         } else {
-                            gameTitle = `${game.id.substring(0, 8)}...`;
+                            // For duels: keep existing format with emoji
+                            gameTitle = `${resultEmoji}${game.id.substring(0, 8)}...`;
+                            gameSubtitle = game.movement;
                         }
-                        gameSubtitle = game.movement;
-                    } else {
-                        // For duels: keep existing format with emoji
-                        gameTitle = `${resultEmoji}${game.id.substring(0, 8)}...`;
-                        gameSubtitle = game.movement;
-                    }
-                    
-                    gameItem.innerHTML = `
+
+                        gameItem.innerHTML = `
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <strong>${gameTitle}</strong>
@@ -1175,44 +1474,55 @@
                             <div class="text-end">
                                 <small class="text-body-secondary">${displayDate.toLocaleDateString()}</small>
                                 <br>
-                                <small class="text-body-secondary">${displayDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
+                                <small class="text-body-secondary">${displayDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
                             </div>
                         </div>
                     `;
-                    gameItem.addEventListener('click', () => {
-                        // Update URL hash and show game details
-                        const params = new URLSearchParams();
-                        if (currentGameType !== 'standard') params.set('gameType', currentGameType);
-                        params.set('gameId', game.id);
-                        window.location.hash = '#!' + params.toString();
-                        showGameDetails(game.id);
+                        gameItem.addEventListener("click", () => {
+                            // Update URL hash and show game details
+                            const params = new URLSearchParams();
+                            if (currentGameType !== "standard")
+                                params.set("gameType", currentGameType);
+                            params.set("gameId", game.id);
+                            window.location.hash = "#!" + params.toString();
+                            showGameDetails(game.id);
+                        });
+                        gamesList.appendChild(gameItem);
                     });
-                    gamesList.appendChild(gameItem);
-                });
-            } catch (error) {
-                console.error('Failed to load recent games:', error);
+                } catch (error) {
+                    console.error("Failed to load recent games:", error);
+                }
             }
-        }
 
-        // Show game details
-        async function showGameDetails(gameId) {
-            try {
-                const response = await fetch('/api/game?id=' + gameId);
-                const gameData = await response.json();
-                
-                // Handle the API response structure
-                const rounds = gameData.rounds || [];
-                
-                const gameDetail = document.getElementById('gameDetail');
-                
-                let html = `
+            // Show game details
+            async function showGameDetails(gameId) {
+                try {
+                    const response = await fetch("/api/game?id=" + gameId);
+                    const gameData = await response.json();
+
+                    // Handle the API response structure
+                    const rounds = gameData.rounds || [];
+
+                    const gameDetail = document.getElementById("gameDetail");
+
+                    let html = `
                     <h5 class="text-body">🎮 Game Details</h5>
                     <p class="text-body"><strong>ID:</strong> ${gameId}</p>
-                    ${gameData.mapName ? `<p class="text-body"><strong>Map:</strong> ${gameData.mapName}</p>` : ''}
-                    
+                    ${gameData.mapName ? `<p class="text-body"><strong>Map:</strong> ${gameData.mapName}</p>` : ""}
+                    ${
+                        gameData.gameType === "duels" && gameData.opponentId
+                            ? `<p class="text-body"><strong>Opponent:</strong> <a href="/opponent/${gameData.opponentId}">${gameData.opponentNick || gameData.opponentId}</a></p>`
+                            : ""
+                    }
+                    ${
+                        gameData.gameType === "duels"
+                            ? `<p class="text-body"><a href="https://geoguessr.com/duels/${gameId}/summary" target="_blank" rel="noopener" style="text-decoration: underline;">View on GeoGuessr</a></p>`
+                            : ""
+                    }
+
                     <!-- Game Map Container -->
                     <div id="gameMapContainer" style="height: 200px; margin-bottom: 15px; border-radius: 4px;"></div>
-                    
+
                     <div class="table-responsive">
                         <table class="table table-sm" id="gameDetailsTable">
                             <thead>
@@ -1220,501 +1530,582 @@
                                     <th>Round</th>
                                     <th>Score</th>
                                     <th>Country</th>
-                                    ${gameData.gameType === 'standard' ? '<th>Distance</th><th>Time</th><th>Steps</th>' : ''}
-                                    ${currentGameType === 'duels' ? '<th>Opponent</th>' : ''}
+                                    ${gameData.gameType === "standard" ? "<th>Distance</th><th>Time</th><th>Steps</th>" : ""}
+                                    ${currentGameType === "duels" ? "<th>Opponent</th>" : ""}
                                 </tr>
                             </thead>
                             <tbody>
                 `;
-                
-                rounds.forEach((round, index) => {
-                    // Determine if this round was won/lost for styling
-                    let rowClass = 'game-round-row';
-                    
-                    // Add score-based coloring
-                    const score = round.player;
-                    if (score < 2000) {
-                        rowClass += ' table-danger';
-                    } else if (score < 4000) {
-                        rowClass += ' table-warning';
-                    } else {
-                        rowClass += ' table-success';
-                    }
-                    
-                    // For duels, also check win/loss (this will override score coloring for duels)
-                    if (currentGameType === 'duels' && round.opponent !== undefined && round.opponent !== null) {
-                        if (round.player > round.opponent) {
-                            rowClass = 'game-round-row table-success';
-                        } else if (round.player < round.opponent) {
-                            rowClass = 'game-round-row table-danger';
+
+                    rounds.forEach((round, index) => {
+                        // Determine if this round was won/lost for styling
+                        let rowClass = "game-round-row";
+
+                        // Add score-based coloring
+                        const score = round.player;
+                        if (score < 2000) {
+                            rowClass += " table-danger";
+                        } else if (score < 4000) {
+                            rowClass += " table-warning";
                         } else {
-                            rowClass = 'game-round-row table-warning'; // Draw
+                            rowClass += " table-success";
                         }
-                    }
-                    
-                    // Build the row based on game type
-                    let rowHTML = `
+
+                        // For duels, also check win/loss (this will override score coloring for duels)
+                        if (
+                            currentGameType === "duels" &&
+                            round.opponent !== undefined &&
+                            round.opponent !== null
+                        ) {
+                            if (round.player > round.opponent) {
+                                rowClass = "game-round-row table-success";
+                            } else if (round.player < round.opponent) {
+                                rowClass = "game-round-row table-danger";
+                            } else {
+                                rowClass = "game-round-row table-warning"; // Draw
+                            }
+                        }
+
+                        // Build the row based on game type
+                        let rowHTML = `
                         <tr class="${rowClass}" data-round="${round.round}" data-round-index="${index}">
                             <td>${round.round}</td>
                             <td>${Math.round(round.player)}</td>
-                            <td><a href="/country/${round.cc}#gameType=${currentGameType}" style="text-decoration: none; color: inherit;">${round.country || round.cc}</a></td>`;
-                    
-                    // Add singleplayer-specific columns
-                    if (gameData.gameType === 'standard') {
-                        const distance = round.distance ? Math.round(round.distance) + ' km' : '-';
-                        const time = round.time ? round.time + 's' : '-';
-                        const steps = round.stepsCount || '-';
-                        rowHTML += `
+                            <td><a href="/country/${round.cc}#gameType=${currentGameType}" style="color: inherit;">${round.country || round.cc}</a></td>`;
+
+                        // Add singleplayer-specific columns
+                        if (gameData.gameType === "standard") {
+                            const distance = round.distance
+                                ? Math.round(round.distance) + " km"
+                                : "-";
+                            const time = round.time ? round.time + "s" : "-";
+                            const steps = round.stepsCount || "-";
+                            rowHTML += `
                             <td>${distance}</td>
                             <td>${time}</td>
                             <td>${steps}</td>`;
-                    }
-                    
-                    // Add duels opponent column
-                    if (currentGameType === 'duels') {
-                        rowHTML += `<td>${Math.round(round.opponent) || '-'}</td>`;
-                    }
-                    
-                    rowHTML += `</tr>`;
-                    html += rowHTML;
-                });
-                
-                html += `
+                        }
+
+                        // Add duels opponent column
+                        if (currentGameType === "duels") {
+                            rowHTML += `<td>${Math.round(round.opponent) || "-"}</td>`;
+                        }
+
+                        rowHTML += `</tr>`;
+                        html += rowHTML;
+                    });
+
+                    html += `
                             </tbody>
                         </table>
                     </div>
                 `;
-                
-                gameDetail.innerHTML = html;
-                
-                // Scroll to game details section smoothly
-                const gameDetailsSection = document.getElementById('gameDetail');
-                gameDetailsSection.scrollIntoView({ 
-                    behavior: 'smooth', 
-                    block: 'start' 
-                });
-                
-                // Load the game map
-                await loadGameMap(gameId);
-                
-                // Add hover listeners to table rows for map interaction
-                setTimeout(() => {
-                    const tableRows = document.querySelectorAll('#gameDetailsTable .game-round-row');
-                    const gameDetailsTable = document.getElementById('gameDetailsTable');
-                    let hoverTimeout = null;
-                    
-                    tableRows.forEach(row => {
-                        row.addEventListener('mouseenter', () => {
-                            // Clear any pending reset
+
+                    gameDetail.innerHTML = html;
+
+                    // Scroll to game details section smoothly
+                    const gameDetailsSection =
+                        document.getElementById("gameDetail");
+                    gameDetailsSection.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                    });
+
+                    // Load the game map
+                    await loadGameMap(gameId);
+
+                    // Add hover listeners to table rows for map interaction
+                    setTimeout(() => {
+                        const tableRows = document.querySelectorAll(
+                            "#gameDetailsTable .game-round-row",
+                        );
+                        const gameDetailsTable =
+                            document.getElementById("gameDetailsTable");
+                        let hoverTimeout = null;
+
+                        tableRows.forEach((row) => {
+                            row.addEventListener("mouseenter", () => {
+                                // Clear any pending reset
+                                if (hoverTimeout) {
+                                    clearTimeout(hoverTimeout);
+                                    hoverTimeout = null;
+                                }
+                                const roundIndex = parseInt(
+                                    row.dataset.roundIndex,
+                                );
+                                highlightRoundOnMap(roundIndex);
+                            });
+
+                            row.addEventListener("mouseleave", () => {
+                                // Add a delay before resetting to prevent flickering between rows
+                                hoverTimeout = setTimeout(() => {
+                                    resetMapView();
+                                }, 150);
+                            });
+                        });
+
+                        // Also add a listener to the table container to detect when mouse completely leaves the table
+                        gameDetailsTable.addEventListener("mouseleave", () => {
                             if (hoverTimeout) {
                                 clearTimeout(hoverTimeout);
-                                hoverTimeout = null;
                             }
-                            const roundIndex = parseInt(row.dataset.roundIndex);
-                            highlightRoundOnMap(roundIndex);
+                            resetMapView();
                         });
-                        
-                        row.addEventListener('mouseleave', () => {
-                            // Add a delay before resetting to prevent flickering between rows
-                            hoverTimeout = setTimeout(() => {
-                                resetMapView();
-                            }, 150);
-                        });
-                    });
-                    
-                    // Also add a listener to the table container to detect when mouse completely leaves the table
-                    gameDetailsTable.addEventListener('mouseleave', () => {
-                        if (hoverTimeout) {
-                            clearTimeout(hoverTimeout);
-                        }
-                        resetMapView();
-                    });
-                }, 100);
-                
-            } catch (error) {
-                console.error('Failed to load game details:', error);
-                document.getElementById('gameDetail').innerHTML = '<div class="alert alert-danger">Error loading game details</div>';
+                    }, 100);
+                } catch (error) {
+                    console.error("Failed to load game details:", error);
+                    document.getElementById("gameDetail").innerHTML =
+                        '<div class="alert alert-danger">Error loading game details</div>';
+                }
             }
-        }
 
-        // Map highlighting functions for game details
-        function highlightRoundOnMap(roundIndex) {
-            if (!currentGameMap || !gameMapMarkers[roundIndex]) return;
-            
-            // Store original view if not already stored
-            if (!originalGameMapView) {
-                originalGameMapView = {
-                    center: currentGameMap.getCenter(),
-                    zoom: currentGameMap.getZoom()
-                };
-            }
-            
-            const markers = gameMapMarkers[roundIndex];
-            
-            // First, dim all other rounds
-            gameMapMarkers.forEach((otherMarkers, index) => {
-                if (index !== roundIndex) {
-                    // Dim other rounds' markers to 25% opacity
-                    if (otherMarkers.correct) {
-                        otherMarkers.correct.setStyle({ opacity: 0.25, fillOpacity: 0.25 });
-                    }
-                    if (otherMarkers.player) {
-                        otherMarkers.player.setStyle({ opacity: 0.25, fillOpacity: 0.25 });
-                    }
-                    if (otherMarkers.opponent) {
-                        otherMarkers.opponent.setStyle({ opacity: 0.25, fillOpacity: 0.25 });
-                    }
-                    if (otherMarkers.label) {
-                        otherMarkers.label.setOpacity(0.25);
-                    }
-                    // Dim lines as well
-                    if (otherMarkers.lines) {
-                        otherMarkers.lines.forEach(line => {
-                            line.setStyle({ opacity: 0.15 });
-                        });
-                    }
+            // Map highlighting functions for game details
+            function highlightRoundOnMap(roundIndex) {
+                if (!currentGameMap || !gameMapMarkers[roundIndex]) return;
+
+                // Store original view if not already stored
+                if (!originalGameMapView) {
+                    originalGameMapView = {
+                        center: currentGameMap.getCenter(),
+                        zoom: currentGameMap.getZoom(),
+                    };
                 }
-            });
-            
-            // Highlight the selected round markers by increasing their size and keeping full opacity
-            if (markers.correct) {
-                markers.correct.setRadius(18);
-                markers.correct.setStyle({ 
-                    weight: 5, 
-                    opacity: 1, 
-                    fillOpacity: 0.9 
-                });
-            }
-            if (markers.player) {
-                markers.player.setRadius(15);
-                markers.player.setStyle({ 
-                    weight: 4, 
-                    opacity: 1, 
-                    fillOpacity: 0.8 
-                });
-            }
-            if (markers.opponent) {
-                markers.opponent.setRadius(15);
-                markers.opponent.setStyle({ 
-                    weight: 4, 
-                    opacity: 1, 
-                    fillOpacity: 0.8 
-                });
-            }
-            if (markers.label) {
-                markers.label.setOpacity(1);
-            }
-            // Enhance lines for the selected round
-            if (markers.lines) {
-                markers.lines.forEach(line => {
-                    line.setStyle({ opacity: 1, weight: 4 });
-                });
-            }
-            
-            // Create bounds for this round
-            const bounds = [];
-            if (markers.correct) bounds.push(markers.correct.getLatLng());
-            if (markers.player) bounds.push(markers.player.getLatLng());
-            if (markers.opponent) bounds.push(markers.opponent.getLatLng());
-            
-            // Zoom to the round
-            if (bounds.length > 0) {
-                // Calculate distance to determine appropriate zoom level
-                let maxZoom = 8; // Default
-                
-                if (markers.correct && markers.player) {
-                    const correctLatLng = markers.correct.getLatLng();
-                    const playerLatLng = markers.player.getLatLng();
-                    const distance = currentGameMap.distance(correctLatLng, playerLatLng);
-                    
-                    // Adjust zoom based on distance between guess and correct answer
-                    if (distance < 100) { // Very close (street level)
-                        maxZoom = 16;
-                    } else if (distance < 1000) { // Close (neighborhood level)
-                        maxZoom = 14;
-                    } else if (distance < 10000) { // Medium distance (city level)
-                        maxZoom = 12;
-                    } else if (distance < 100000) { // Far (regional level)
-                        maxZoom = 10;
+
+                const markers = gameMapMarkers[roundIndex];
+
+                // First, dim all other rounds
+                gameMapMarkers.forEach((otherMarkers, index) => {
+                    if (index !== roundIndex) {
+                        // Dim other rounds' markers to 25% opacity
+                        if (otherMarkers.correct) {
+                            otherMarkers.correct.setStyle({
+                                opacity: 0.25,
+                                fillOpacity: 0.25,
+                            });
+                        }
+                        if (otherMarkers.player) {
+                            otherMarkers.player.setStyle({
+                                opacity: 0.25,
+                                fillOpacity: 0.25,
+                            });
+                        }
+                        if (otherMarkers.opponent) {
+                            otherMarkers.opponent.setStyle({
+                                opacity: 0.25,
+                                fillOpacity: 0.25,
+                            });
+                        }
+                        if (otherMarkers.label) {
+                            otherMarkers.label.setOpacity(0.25);
+                        }
+                        // Dim lines as well
+                        if (otherMarkers.lines) {
+                            otherMarkers.lines.forEach((line) => {
+                                line.setStyle({ opacity: 0.15 });
+                            });
+                        }
                     }
-                    // else use default maxZoom = 8 for very far distances
-                }
-                
-                currentGameMap.fitBounds(bounds, { 
-                    padding: [30, 30],
-                    maxZoom: maxZoom
                 });
-            }
-        }
-        
-        function resetMapView() {
-            if (!currentGameMap || !gameMapMarkers) return;
-            
-            // Reset all marker styles to their original state
-            gameMapMarkers.forEach(markers => {
+
+                // Highlight the selected round markers by increasing their size and keeping full opacity
                 if (markers.correct) {
-                    markers.correct.setRadius(12);
-                    markers.correct.setStyle({ 
-                        weight: 3, 
-                        opacity: 1, 
-                        fillOpacity: 0.9 
+                    markers.correct.setRadius(18);
+                    markers.correct.setStyle({
+                        weight: 5,
+                        opacity: 1,
+                        fillOpacity: 0.9,
                     });
                 }
                 if (markers.player) {
-                    markers.player.setRadius(10);
-                    markers.player.setStyle({ 
-                        weight: 2, 
-                        opacity: 1, 
-                        fillOpacity: 0.8 
+                    markers.player.setRadius(15);
+                    markers.player.setStyle({
+                        weight: 4,
+                        opacity: 1,
+                        fillOpacity: 0.8,
                     });
                 }
                 if (markers.opponent) {
-                    markers.opponent.setRadius(10);
-                    markers.opponent.setStyle({ 
-                        weight: 2, 
-                        opacity: 1, 
-                        fillOpacity: 0.8 
+                    markers.opponent.setRadius(15);
+                    markers.opponent.setStyle({
+                        weight: 4,
+                        opacity: 1,
+                        fillOpacity: 0.8,
                     });
                 }
                 if (markers.label) {
                     markers.label.setOpacity(1);
                 }
-                // Reset lines as well
+                // Enhance lines for the selected round
                 if (markers.lines) {
-                    markers.lines.forEach((line, lineIndex) => {
-                        // Set original opacity and weight for lines
-                        if (lineIndex < 2) { // Guess lines (player and opponent)
-                            line.setStyle({ opacity: 0.7, weight: 3 });
-                        } else { // Connection line
-                            line.setStyle({ opacity: 0.4, weight: 2 });
-                        }
+                    markers.lines.forEach((line) => {
+                        line.setStyle({ opacity: 1, weight: 4 });
                     });
                 }
-            });
-            
-            // Return to original view
-            if (originalGameMapView) {
-                currentGameMap.setView(originalGameMapView.center, originalGameMapView.zoom);
-            }
-        }
 
-        // Load individual game map
-        async function loadGameMap(gameId) {
-            try {
-                const response = await fetch('/api/game_map_data?id=' + gameId);
-                const rounds = await response.json();
-                
-                // Initialize game map
-                const gameMap = L.map('gameMapContainer', {
-                    center: [20, 0],
-                    zoom: 2,
-                    zoomControl: true,
-                    scrollWheelZoom: false
-                });
-
-                // Set global references
-                currentGameMap = gameMap;
-                gameMapMarkers = [];
-                originalGameMapView = null;
-
-                // Add tile layer based on current theme
-                const tileUrl = isDarkMode ? 
-                    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' :
-                    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-                
-                L.tileLayer(tileUrl, {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                    subdomains: 'abcd',
-                    maxZoom: 19
-                }).addTo(gameMap);
-
+                // Create bounds for this round
                 const bounds = [];
-                
-                rounds.forEach((round, index) => {
-                    // Initialize marker storage for this round
-                    gameMapMarkers[index] = { lines: [] };
-                    
-                    // Add correct answer marker (green) if available
-                    if (round.actualLat && round.actualLng) {
-                        const correctMarker = L.circleMarker([round.actualLat, round.actualLng], {
-                            radius: 12,
-                            fillColor: '#27ae60',
-                            color: '#fff',
-                            weight: 3,
-                            opacity: 1,
-                            fillOpacity: 0.9
-                        });
-                        
-                        correctMarker.bindPopup(`
-                            <strong>Round ${round.round} - Correct Location</strong><br>
-                            Country: ${round.actualCountry || round.country}<br>
-                            ${round.multiplier ? `Multiplier: ${round.multiplier}x` : ''}
-                        `);
-                        
-                        correctMarker.addTo(gameMap);
-                        bounds.push([round.actualLat, round.actualLng]);
-                        
-                        // Store marker reference
-                        gameMapMarkers[index].correct = correctMarker;
+                if (markers.correct) bounds.push(markers.correct.getLatLng());
+                if (markers.player) bounds.push(markers.player.getLatLng());
+                if (markers.opponent) bounds.push(markers.opponent.getLatLng());
+
+                // Zoom to the round
+                if (bounds.length > 0) {
+                    // Calculate distance to determine appropriate zoom level
+                    let maxZoom = 8; // Default
+
+                    if (markers.correct && markers.player) {
+                        const correctLatLng = markers.correct.getLatLng();
+                        const playerLatLng = markers.player.getLatLng();
+                        const distance = currentGameMap.distance(
+                            correctLatLng,
+                            playerLatLng,
+                        );
+
+                        // Adjust zoom based on distance between guess and correct answer
+                        if (distance < 100) {
+                            // Very close (street level)
+                            maxZoom = 16;
+                        } else if (distance < 1000) {
+                            // Close (neighborhood level)
+                            maxZoom = 14;
+                        } else if (distance < 10000) {
+                            // Medium distance (city level)
+                            maxZoom = 12;
+                        } else if (distance < 100000) {
+                            // Far (regional level)
+                            maxZoom = 10;
+                        }
+                        // else use default maxZoom = 8 for very far distances
                     }
 
-                    if (round.playerLat && round.playerLng) {
-                        // Player marker is always blue
-                        const markerColor = '#3498db'; // Blue for player
+                    currentGameMap.fitBounds(bounds, {
+                        padding: [30, 30],
+                        maxZoom: maxZoom,
+                    });
+                }
+            }
 
-                        // Add player guess marker
-                        const guessMarker = L.circleMarker([round.playerLat, round.playerLng], {
-                            radius: 10,
-                            fillColor: markerColor,
-                            color: '#fff',
+            function resetMapView() {
+                if (!currentGameMap || !gameMapMarkers) return;
+
+                // Reset all marker styles to their original state
+                gameMapMarkers.forEach((markers) => {
+                    if (markers.correct) {
+                        markers.correct.setRadius(12);
+                        markers.correct.setStyle({
+                            weight: 3,
+                            opacity: 1,
+                            fillOpacity: 0.9,
+                        });
+                    }
+                    if (markers.player) {
+                        markers.player.setRadius(10);
+                        markers.player.setStyle({
                             weight: 2,
                             opacity: 1,
-                            fillOpacity: 0.8
+                            fillOpacity: 0.8,
                         });
-                        
-                        const distanceKm = round.distance || 
-                            (round.playerScore > 0 ? Math.round((5000 - round.playerScore) * 20) : 'Unknown');
-                        
-                        guessMarker.bindPopup(`
-                            <strong>Round ${round.round} - Your Guess</strong><br>
-                            Score: ${Math.round(round.playerScore)}<br>
-                            Distance: ${typeof distanceKm === 'number' ? Math.round(distanceKm) + 'km' : distanceKm}<br>
-                            Country: ${round.country}
-                        `);
-                        
-                        guessMarker.addTo(gameMap);
-                        bounds.push([round.playerLat, round.playerLng]);
-                        
-                        // Store marker reference
-                        gameMapMarkers[index].player = guessMarker;
+                    }
+                    if (markers.opponent) {
+                        markers.opponent.setRadius(10);
+                        markers.opponent.setStyle({
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8,
+                        });
+                    }
+                    if (markers.label) {
+                        markers.label.setOpacity(1);
+                    }
+                    // Reset lines as well
+                    if (markers.lines) {
+                        markers.lines.forEach((line, lineIndex) => {
+                            // Set original opacity and weight for lines
+                            if (lineIndex < 2) {
+                                // Guess lines (player and opponent)
+                                line.setStyle({ opacity: 0.7, weight: 3 });
+                            } else {
+                                // Connection line
+                                line.setStyle({ opacity: 0.4, weight: 2 });
+                            }
+                        });
+                    }
+                });
 
-                        // Draw line from guess to correct answer
+                // Return to original view
+                if (originalGameMapView) {
+                    currentGameMap.setView(
+                        originalGameMapView.center,
+                        originalGameMapView.zoom,
+                    );
+                }
+            }
+
+            // Load individual game map
+            async function loadGameMap(gameId) {
+                try {
+                    const response = await fetch(
+                        "/api/game_map_data?id=" + gameId,
+                    );
+                    const rounds = await response.json();
+
+                    // Initialize game map
+                    const gameMap = L.map("gameMapContainer", {
+                        center: [20, 0],
+                        zoom: 2,
+                        zoomControl: true,
+                        scrollWheelZoom: false,
+                    });
+
+                    // Set global references
+                    currentGameMap = gameMap;
+                    gameMapMarkers = [];
+                    originalGameMapView = null;
+
+                    // Add tile layer based on current theme
+                    const tileUrl = isDarkMode
+                        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
+                    L.tileLayer(tileUrl, {
+                        attribution:
+                            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                        subdomains: "abcd",
+                        maxZoom: 19,
+                    }).addTo(gameMap);
+
+                    const bounds = [];
+
+                    rounds.forEach((round, index) => {
+                        // Initialize marker storage for this round
+                        gameMapMarkers[index] = { lines: [] };
+
+                        // Add correct answer marker (green) if available
                         if (round.actualLat && round.actualLng) {
-                            const guessLine = L.polyline([
-                                [round.playerLat, round.playerLng],
-                                [round.actualLat, round.actualLng]
-                            ], {
-                                color: markerColor,
-                                weight: 3,
-                                opacity: 0.7,
-                                dashArray: '10, 5'
-                            });
-                            
-                            guessLine.bindTooltip(`Round ${round.round} - Your guess line`);
-                            guessLine.addTo(gameMap);
-                            
-                            // Store line reference
-                            gameMapMarkers[index].lines.push(guessLine);
+                            const correctMarker = L.circleMarker(
+                                [round.actualLat, round.actualLng],
+                                {
+                                    radius: 12,
+                                    fillColor: "#27ae60",
+                                    color: "#fff",
+                                    weight: 3,
+                                    opacity: 1,
+                                    fillOpacity: 0.9,
+                                },
+                            );
+
+                            correctMarker.bindPopup(`
+                            <strong>Round ${round.round} - Correct Location</strong><br>
+                            Country: ${round.actualCountry || round.country}<br>
+                            ${round.multiplier ? `Multiplier: ${round.multiplier}x` : ""}
+                        `);
+
+                            correctMarker.addTo(gameMap);
+                            bounds.push([round.actualLat, round.actualLng]);
+
+                            // Store marker reference
+                            gameMapMarkers[index].correct = correctMarker;
                         }
 
-                        // Add opponent marker if it's a duel and has opponent data
-                        if (currentGameType === 'duels' && round.opponentLat && round.opponentLng) {
-                            // Opponent marker is always red
-                            const oppColor = '#e74c3c'; // Red for opponent
+                        if (round.playerLat && round.playerLng) {
+                            // Player marker is always blue
+                            const markerColor = "#3498db"; // Blue for player
 
-                            const oppMarker = L.circleMarker([round.opponentLat, round.opponentLng], {
-                                radius: 10,
-                                fillColor: oppColor,
-                                color: '#fff',
-                                weight: 2,
-                                opacity: 1,
-                                fillOpacity: 0.8
-                            });
-                            
-                            const oppDistanceKm = round.oppScore > 0 ? 
-                                Math.round((5000 - round.oppScore) * 20) : 
-                                'Unknown';
-                            
-                            oppMarker.bindPopup(`
+                            // Add player guess marker
+                            const guessMarker = L.circleMarker(
+                                [round.playerLat, round.playerLng],
+                                {
+                                    radius: 10,
+                                    fillColor: markerColor,
+                                    color: "#fff",
+                                    weight: 2,
+                                    opacity: 1,
+                                    fillOpacity: 0.8,
+                                },
+                            );
+
+                            const distanceKm =
+                                round.distance ||
+                                (round.playerScore > 0
+                                    ? Math.round(
+                                          (5000 - round.playerScore) * 20,
+                                      )
+                                    : "Unknown");
+
+                            guessMarker.bindPopup(`
+                            <strong>Round ${round.round} - Your Guess</strong><br>
+                            Score: ${Math.round(round.playerScore)}<br>
+                            Distance: ${typeof distanceKm === "number" ? Math.round(distanceKm) + "km" : distanceKm}<br>
+                            Country: ${round.country}
+                        `);
+
+                            guessMarker.addTo(gameMap);
+                            bounds.push([round.playerLat, round.playerLng]);
+
+                            // Store marker reference
+                            gameMapMarkers[index].player = guessMarker;
+
+                            // Draw line from guess to correct answer
+                            if (round.actualLat && round.actualLng) {
+                                const guessLine = L.polyline(
+                                    [
+                                        [round.playerLat, round.playerLng],
+                                        [round.actualLat, round.actualLng],
+                                    ],
+                                    {
+                                        color: markerColor,
+                                        weight: 3,
+                                        opacity: 0.7,
+                                        dashArray: "10, 5",
+                                    },
+                                );
+
+                                guessLine.bindTooltip(
+                                    `Round ${round.round} - Your guess line`,
+                                );
+                                guessLine.addTo(gameMap);
+
+                                // Store line reference
+                                gameMapMarkers[index].lines.push(guessLine);
+                            }
+
+                            // Add opponent marker if it's a duel and has opponent data
+                            if (
+                                currentGameType === "duels" &&
+                                round.opponentLat &&
+                                round.opponentLng
+                            ) {
+                                // Opponent marker is always red
+                                const oppColor = "#e74c3c"; // Red for opponent
+
+                                const oppMarker = L.circleMarker(
+                                    [round.opponentLat, round.opponentLng],
+                                    {
+                                        radius: 10,
+                                        fillColor: oppColor,
+                                        color: "#fff",
+                                        weight: 2,
+                                        opacity: 1,
+                                        fillOpacity: 0.8,
+                                    },
+                                );
+
+                                const oppDistanceKm =
+                                    round.oppScore > 0
+                                        ? Math.round(
+                                              (5000 - round.oppScore) * 20,
+                                          )
+                                        : "Unknown";
+
+                                oppMarker.bindPopup(`
                                 <strong>Round ${round.round} - Opponent</strong><br>
                                 Score: ${Math.round(round.oppScore)}<br>
                                 Est. Distance: ~${oppDistanceKm}km<br>
                                 Country: ${round.country}
                             `);
-                            
-                            oppMarker.addTo(gameMap);
-                            bounds.push([round.opponentLat, round.opponentLng]);
-                            
-                            // Store marker reference
-                            gameMapMarkers[index].opponent = oppMarker;
 
-                            // Draw line from opponent guess to correct answer
-                            if (round.actualLat && round.actualLng) {
-                                const oppLine = L.polyline([
-                                    [round.opponentLat, round.opponentLng],
-                                    [round.actualLat, round.actualLng]
-                                ], {
-                                    color: oppColor,
-                                    weight: 3,
-                                    opacity: 0.7,
-                                    dashArray: '10, 5'
-                                });
-                                
-                                oppLine.bindTooltip(`Round ${round.round} - Opponent guess line`);
-                                oppLine.addTo(gameMap);
-                                
+                                oppMarker.addTo(gameMap);
+                                bounds.push([
+                                    round.opponentLat,
+                                    round.opponentLng,
+                                ]);
+
+                                // Store marker reference
+                                gameMapMarkers[index].opponent = oppMarker;
+
+                                // Draw line from opponent guess to correct answer
+                                if (round.actualLat && round.actualLng) {
+                                    const oppLine = L.polyline(
+                                        [
+                                            [
+                                                round.opponentLat,
+                                                round.opponentLng,
+                                            ],
+                                            [round.actualLat, round.actualLng],
+                                        ],
+                                        {
+                                            color: oppColor,
+                                            weight: 3,
+                                            opacity: 0.7,
+                                            dashArray: "10, 5",
+                                        },
+                                    );
+
+                                    oppLine.bindTooltip(
+                                        `Round ${round.round} - Opponent guess line`,
+                                    );
+                                    oppLine.addTo(gameMap);
+
+                                    // Store line reference
+                                    gameMapMarkers[index].lines.push(oppLine);
+                                }
+
+                                // Add a connection line between player and opponent guesses
+                                const connectionLine = L.polyline(
+                                    [
+                                        [round.playerLat, round.playerLng],
+                                        [round.opponentLat, round.opponentLng],
+                                    ],
+                                    {
+                                        color: "#95a5a6",
+                                        weight: 2,
+                                        opacity: 0.4,
+                                        dashArray: "5, 5",
+                                    },
+                                );
+
+                                connectionLine.bindTooltip(
+                                    `Round ${round.round} - Guess comparison`,
+                                );
+                                connectionLine.addTo(gameMap);
+
                                 // Store line reference
-                                gameMapMarkers[index].lines.push(oppLine);
+                                gameMapMarkers[index].lines.push(
+                                    connectionLine,
+                                );
                             }
 
-                            // Add a connection line between player and opponent guesses
-                            const connectionLine = L.polyline([
-                                [round.playerLat, round.playerLng],
-                                [round.opponentLat, round.opponentLng]
-                            ], {
-                                color: '#95a5a6',
-                                weight: 2,
-                                opacity: 0.4,
-                                dashArray: '5, 5'
+                            // Add round number label
+                            const roundLabel = L.divIcon({
+                                className: "round-label",
+                                html: `<div style="background: rgba(0,0,0,0.8); color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; border: 2px solid white;">${round.round}</div>`,
+                                iconSize: [25, 25],
+                                iconAnchor: [12, 30],
                             });
-                            
-                            connectionLine.bindTooltip(`Round ${round.round} - Guess comparison`);
-                            connectionLine.addTo(gameMap);
-                            
-                            // Store line reference
-                            gameMapMarkers[index].lines.push(connectionLine);
+
+                            // Place label near the correct answer if available, otherwise near the guess
+                            const labelLat = round.actualLat || round.playerLat;
+                            const labelLng = round.actualLng || round.playerLng;
+                            const labelMarker = L.marker([labelLat, labelLng], {
+                                icon: roundLabel,
+                            }).addTo(gameMap);
+
+                            // Store label reference
+                            gameMapMarkers[index].label = labelMarker;
                         }
+                    });
 
-                        // Add round number label
-                        const roundLabel = L.divIcon({
-                            className: 'round-label',
-                            html: `<div style="background: rgba(0,0,0,0.8); color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; border: 2px solid white;">${round.round}</div>`,
-                            iconSize: [25, 25],
-                            iconAnchor: [12, 30]
-                        });
-                        
-                        // Place label near the correct answer if available, otherwise near the guess
-                        const labelLat = round.actualLat || round.playerLat;
-                        const labelLng = round.actualLng || round.playerLng;
-                        const labelMarker = L.marker([labelLat, labelLng], { icon: roundLabel }).addTo(gameMap);
-                        
-                        // Store label reference
-                        gameMapMarkers[index].label = labelMarker;
+                    // Fit map to show all markers
+                    if (bounds.length > 0) {
+                        gameMap.fitBounds(bounds, { padding: [20, 20] });
                     }
-                });
 
-                // Fit map to show all markers
-                if (bounds.length > 0) {
-                    gameMap.fitBounds(bounds, { padding: [20, 20] });
+                    // Refresh map size
+                    setTimeout(() => {
+                        gameMap.invalidateSize();
+                    }, 100);
+                } catch (error) {
+                    console.error("Failed to load game map:", error);
                 }
-
-                // Refresh map size
-                setTimeout(() => {
-                    gameMap.invalidateSize();
-                }, 100);
-
-            } catch (error) {
-                console.error('Failed to load game map:', error);
             }
-        }
 
-        // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function() {
-            loadAllData();
-        });
-        
-        // Parse URL hash for initial state
-        parseUrlHash();
-    </script>
-</body>
+            // Initialize dashboard
+            document.addEventListener("DOMContentLoaded", function () {
+                loadAllData();
+            });
+
+            // Parse URL hash for initial state
+            parseUrlHash();
+        </script>
+    </body>
 </html>

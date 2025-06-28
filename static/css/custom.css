@@ -1,0 +1,122 @@
+.navbar {
+    border: none;
+}
+.stat-card {
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+.stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+}
+.stat-label {
+    font-size: 0.9rem;
+}
+
+.table-container {
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+.country-table {
+    height: 300px;
+    overflow-y: auto;
+}
+.sticky-top {
+    background-color: var(--bs-body-secondary-bg);
+    z-index: 10;
+}
+[data-bs-theme="dark"] .sticky-top {
+    background-color: var(--bs-dark);
+}
+.game-item {
+    cursor: pointer;
+}
+.game-round-row {
+    cursor: pointer;
+    transition:
+        border-bottom 0.2s ease,
+        background-color 0.1s ease;
+}
+.game-round-row:hover {
+    border-right: 4px solid #000 !important;
+    border-bottom: 3px solid #000 !important;
+}
+
+.timeline-container {
+    margin-bottom: 1.5rem;
+}
+.country-map {
+    height: 400px;
+    width: 100%;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.rounds-table {
+    max-height: 500px;
+    overflow-y: auto;
+}
+.game-link {
+    text-decoration: none;
+    color: inherit;
+}
+.game-link:hover {
+    color: var(--bs-primary);
+}
+.confused-table {
+    height: 300px;
+    overflow-y: auto;
+}
+
+.movement-filter {
+    margin-bottom: 1.5rem;
+}
+.movement-filter .btn {
+    margin-right: 0.5rem;
+}
+
+.opponent-map {
+    height: 400px;
+    width: 100%;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.match-row {
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+.match-row:hover {
+    background-color: var(--bs-primary) !important;
+    color: white !important;
+}
+
+.win-badge {
+    font-weight: bold;
+}
+.win-badge.win {
+    color: #28a745;
+}
+.win-badge.loss {
+    color: #dc3545;
+}
+.win-badge.draw {
+    color: #ffc107;
+}
+
+.chart-container {
+    position: relative;
+    width: 100%; /* Use 100% width */
+    padding: 10px 0; /* Padding remains, but no additional width from margins */
+    overflow: hidden; /* Hide any overflow */
+    min-height: 300px !important;
+    max-height: 400px !important;
+}
+
+canvas {
+    display: block;
+    width: 100% !important; /* Full width within the container */
+    height: auto !important; /* Keep height proportional */
+}
